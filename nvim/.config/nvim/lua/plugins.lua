@@ -38,6 +38,7 @@ return {
 					"python",
 					"query",
 					"regex",
+					"rust",
 					"toml",
 					"tsx",
 					"typescript",
@@ -337,8 +338,38 @@ return {
 				},
 			})
 
+			-- basedpyright по умолчанию работает в режиме "recommended":
+			-- он включает кучу reportUnknown*/reportAny/reportMissingParameterType,
+			-- из-за чего почти в КАЖДОЙ строке появляется ошибка о типах.
+			-- "standard" даёт нормальную проверку типов без этого шума.
+			vim.lsp.config("basedpyright", {
+				settings = {
+					basedpyright = {
+						analysis = {
+							typeCheckingMode = "standard",
+						},
+					},
+				},
+			})
+
+			-- rust-analyzer: проверка через clippy при сохранении + инлей-подсказки типов.
+			vim.lsp.config("rust_analyzer", {
+				settings = {
+					["rust-analyzer"] = {
+						check = { command = "clippy" },
+						cargo = { allFeatures = true },
+						inlayHints = {
+							bindingModeHints = { enable = true },
+							chainingHints = { enable = true },
+							parameterHints = { enable = true },
+							typeHints = { enable = true },
+						},
+					},
+				},
+			})
+
 			require("mason-lspconfig").setup({
-				ensure_installed = { "lua_ls", "basedpyright", "ruff" },
+				ensure_installed = { "lua_ls", "basedpyright", "ruff", "rust_analyzer" },
 				-- mason-lspconfig v2 сам включает всё установленное через vim.lsp.enable().
 				-- stylua — форматтер, а не LSP: без exclude он падает с exit code 2
 				-- на каждом .lua файле.
@@ -435,9 +466,18 @@ return {
 					bind("gr", tb("lsp_references"), "References")
 					bind("gI", tb("lsp_implementations"), "Goto implementation")
 					bind("gy", tb("lsp_type_definitions"), "Type definition")
-					bind("<leader>ds", tb("lsp_document_symbols"), "Document symbols")
+					bind("<leader>ls", tb("lsp_document_symbols"), "Document symbols")
 					bind("<leader>ca", vim.lsp.buf.code_action, "Code action")
 					bind("<leader>rn", vim.lsp.buf.rename, "Rename")
+
+					-- Inlay hints (типы/параметры прямо в коде, напр. для rust-analyzer).
+					-- По умолчанию СКРЫТЫ; показать/спрятать в буфере — <leader>lh.
+					local client_ih = vim.lsp.get_client_by_id(event.data.client_id)
+					if client_ih and client_ih:supports_method("textDocument/inlayHint") then
+						bind("<leader>lh", function()
+							vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled({ bufnr = event.buf }), { bufnr = event.buf })
+						end, "Toggle inlay hints")
+					end
 
 					-- Подсветка вхождений слова под курсором
 					local client = vim.lsp.get_client_by_id(event.data.client_id)
@@ -482,6 +522,7 @@ return {
 				formatters_by_ft = {
 					lua = { "stylua" },
 					python = { "ruff_organize_imports", "ruff_format" },
+					rust = { "rustfmt" },
 				},
 
 				format_on_save = {
@@ -522,7 +563,8 @@ return {
 				{ "<leader>g", group = "git" },
 				{ "<leader>h", group = "hunk" },
 				{ "<leader>c", group = "code" },
-				{ "<leader>d", group = "document/diagnostics" },
+				{ "<leader>l", group = "lsp/diagnostics" },
+				{ "<leader>d", desc = "Cut (to clipboard)" },
 			},
 		},
 	},

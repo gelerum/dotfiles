@@ -88,16 +88,29 @@ alias rm='rm -i'
 alias cp='cp -i'
 alias mv='mv -i'
 
-alias zshconfig="nvim ~/.zshrc"
-alias nvimconfig="nvim ~/.config/nvim/"
-alias reload="source ~/.zshrc && echo 'Zsh config reloaded!'"
-
 alias ls="eza --icons=always"
 alias ll="eza -lah --icons=always --git"
 # --level caps depth so `tree` in a node_modules/ dir doesn't dump 50k lines.
 # --git-ignore hides build artefacts. Use `eza --tree` directly for unlimited.
 alias tree="eza --tree --level=2 --git-ignore --icons=always"
-alias top="btop"
+# btop не умеет менять тему на лету и читает конфиг только при старте, поэтому
+# тему выбираем в момент запуска — по тому же сигналу портала, который
+# переключает весь десктоп в 06:00 и 20:00 (его выставляет хук noctalia).
+# Флаг -c принимает произвольный конфиг; оба файла лежат в ~/.config/btop/.
+#
+# Внутри btop: "p" листает пресеты. Пресет 1 — только CPU и процессы,
+# он влезает в половину экрана, где полный набор блоков не помещается.
+# Обёртка названа btop, а не top: иначе набранное по привычке "btop"
+# проходит мимо неё и запускает дефолтный конфиг с mocha.
+# "command btop" обязателен — без него функция вызовет сама себя.
+btop() {
+  local cfg="$HOME/.config/btop/btop.conf"          # mocha
+  if [[ "$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)" == *light* ]]; then
+    cfg="$HOME/.config/btop/btop-latte.conf"
+  fi
+  command btop -c "$cfg" "$@"
+}
+alias top=btop
 # --paging=never keeps `cat` behaving like cat: bat otherwise opens a pager
 # on long files, which is surprising in the middle of a pipeline of thought.
 alias cat="bat --paging=never"
@@ -250,33 +263,6 @@ autoload -Uz add-zsh-hook
 _reset_cursor_beam() { echo -ne '\e[5 q'; }
 add-zsh-hook preexec _reset_cursor_beam
 
-# =============================================================================
-# 7. NODE VERSION MANAGER (NVM) — LAZY LOADED
-# =============================================================================
-export NVM_DIR="$HOME/.nvm"
-
-# Put the newest installed node on PATH up front (pure zsh glob, no fork:
-# the (n) qualifier sorts numerically, so [-1] is the highest version).
-if [[ -d "$NVM_DIR/versions/node" ]]; then
-  _node_versions=("$NVM_DIR/versions/node"/*(N/n))
-  (( ${#_node_versions} )) && export PATH="${_node_versions[-1]}/bin:$PATH"
-  unset _node_versions
-fi
-
-lazy_load_nvm() {
-  unset -f nvm yarn pnpm corepack 2>/dev/null
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-  [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
-}
-
-# IMPORTANT: node/npm/npx are deliberately NOT wrapped. They already resolve
-# via PATH above, and a shell function always shadows the real binary — so the
-# old config paid the full slow nvm.sh load on the very first `node` call,
-# defeating the point of lazy loading. Only nvm itself needs the real sourcing.
-for _c in nvm yarn pnpm corepack; do
-  eval "$_c() { lazy_load_nvm; $_c \"\$@\"; }"
-done
-unset _c
 
 # =============================================================================
 # 8. NAVIGATION (zoxide)
@@ -284,6 +270,14 @@ unset _c
 # --cmd cd makes `cd foo` a zoxide jump while preserving cd -, cd .., completion.
 if (( $+commands[zoxide] )); then
   eval "$(zoxide init zsh --cmd cd)"
+fi
+
+# Per-directory environments (.envrc). `direnv allow` on its own does nothing
+# without this: allowing only marks the file trusted, it is the shell hook that
+# actually loads it on chpwd/precmd. Installed after zoxide so it hooks the
+# `cd` that zoxide defines.
+if (( $+commands[direnv] )); then
+  eval "$(direnv hook zsh)"
 fi
 
 # =============================================================================
@@ -451,9 +445,14 @@ export PATH="$HOME/.local/bin:$PATH"
 export SOPS_AGE_KEY_FILE="$HOME/.config/age/sops.age"
 export GOPASS_AGE_IDENTITIES_FILE="$HOME/.config/age/gopass.age"
 
-# Guard against XDG_RUNTIME_DIR being unset (e.g. su, cron, some SSH sessions),
-# which would otherwise set SSH_AUTH_SOCK to the bogus "/ssh-agent.socket".
-if [[ -n "$XDG_RUNTIME_DIR" ]]; then
+# Point at the user-service ssh-agent, but only if that socket really exists.
+# Two guards, both load-bearing:
+#   - XDG_RUNTIME_DIR unset (su, cron, some SSH sessions) would otherwise
+#     produce the bogus path "/ssh-agent.socket";
+#   - on a server reached with `ssh -A`, sshd already set SSH_AUTH_SOCK to a
+#     forwarded socket in /tmp. Overwriting it unconditionally kills agent
+#     forwarding, so we only override when a local agent socket is present.
+if [[ -n "$XDG_RUNTIME_DIR" && -S "$XDG_RUNTIME_DIR/ssh-agent.socket" ]]; then
   export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.socket"
 fi
 
@@ -487,3 +486,8 @@ else
   PROMPT='${_vi_mode} %F{cyan}%~%f${vcs_info_msg_0_} %(?.%F{green}❯.%F{red}❯)%f '
   RPROMPT=''
 fi
+
+# bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+[ -s "$BUN_INSTALL/_bun" ] && source "$BUN_INSTALL/_bun"

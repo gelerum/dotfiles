@@ -1,0 +1,22 @@
+services:
+  dev:
+    build:
+      context: .
+      args:
+        UID: 1000
+        GID: 1000 
+        DOTFILES_REPO: https://github.com/gelerum/dotfiles
+        DOTFILES_REF: main
+        DOTFILES_PACKAGES: "zsh git starship claude nvim"
+    init: true
+    environment:
+      - TERM
+      - COLORTERM
+      - EDITOR=nvim
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:?не задан CLAUDE_CODE_OAUTH_TOKEN}
+    volumes:
+      - .:/work
+      - claude-projects:/home/q/.claude/projects
+
+volumes:
+  claude-projects: {}

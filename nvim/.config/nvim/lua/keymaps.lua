@@ -64,10 +64,10 @@ map("n", "<leader>fd", tb("diagnostics"), { desc = "Diagnostics (Telescope)" })
 map("n", "<leader>fR", tb("resume"), { desc = "Resume Last Search" })
 
 -- =============================================
--- DIAGNOSTICS
+-- DIAGNOSTICS  (префикс <leader>l — lsp; <leader>d отдан под cut)
 -- =============================================
-map("n", "<leader>dd", vim.diagnostic.open_float, { desc = "Line Diagnostics" })
-map("n", "<leader>dq", vim.diagnostic.setloclist, { desc = "Diagnostics To Loclist" })
+map("n", "<leader>ll", vim.diagnostic.open_float, { desc = "Line Diagnostics" })
+map("n", "<leader>lq", vim.diagnostic.setloclist, { desc = "Diagnostics To Loclist" })
 
 -- =============================================
 -- General Keymaps
@@ -87,6 +87,21 @@ map("n", "<C-Right>", "<cmd>vertical resize +2<CR>", { desc = "Increase Width" }
 
 -- Clear search highlight
 map("n", "<Esc>", "<cmd>nohlsearch<CR>", { desc = "Clear Highlights" })
+
+-- =============================================
+-- DELETE vs CUT
+-- =============================================
+-- d/x/c — ЧИСТОЕ удаление: летит в "чёрную дыру" ("_), буфер обмена не трогает.
+-- <leader>d / <leader>x — ВЫРЕЗАТЬ: явно кладём в системный буфер обмена ("+).
+map({ "n", "x" }, "d", '"_d', { desc = "Delete (no clipboard)" })
+map({ "n", "x" }, "D", '"_D', { desc = "Delete to EOL (no clipboard)" })
+map({ "n", "x" }, "x", '"_x', { desc = "Delete char (no clipboard)" })
+map({ "n", "x" }, "c", '"_c', { desc = "Change (no clipboard)" })
+map({ "n", "x" }, "C", '"_C', { desc = "Change to EOL (no clipboard)" })
+
+map({ "n", "x" }, "<leader>d", '"+d', { desc = "Cut (to clipboard)" })
+map({ "n", "x" }, "<leader>x", '"+d', { desc = "Cut (to clipboard)" })
+map({ "n", "x" }, "<leader>X", '"+D', { desc = "Cut to EOL (to clipboard)" })
 
 -- Вставка поверх выделения не затирает регистр
 map("x", "p", '"_dP', { desc = "Вставить без удаления из регистра" })

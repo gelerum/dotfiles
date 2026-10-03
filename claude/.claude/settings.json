@@ -1,0 +1,70 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./**/node_modules/**)",
+      "Read(./vendor/**)",
+      "Read(./dist/**)",
+      "Read(./build/**)",
+      "Read(./out/**)",
+      "Read(./coverage/**)",
+      "Read(./.nyc_output/**)",
+      "Read(./**/*.min.js)",
+      "Read(./**/*.bundle.js)",
+      "Read(./**/*.map)",
+      "Read(./.vscode/**)",
+      "Read(./.idea/**)",
+
+      "Read(./.venv/**)",
+      "Read(./venv/**)",
+      "Read(./**/__pycache__/**)",
+      "Read(./**/*.pyc)",
+      "Read(./**/*.pyo)",
+      "Read(./**/.pytest_cache/**)",
+      "Read(./**/.mypy_cache/**)",
+      "Read(./**/.ruff_cache/**)",
+      "Read(./**/.hypothesis/**)",
+      "Read(./.tox/**)",
+      "Read(./.nox/**)",
+      "Read(./**/*.egg-info/**)",
+      "Read(./.eggs/**)",
+      "Read(./htmlcov/**)",
+      "Read(./.coverage)",
+      "Read(./**/.ipynb_checkpoints/**)",
+
+      "Read(./**/target/**)",
+
+      "Read(./**/*.test)",
+      "Read(./**/*.prof)",
+
+      "Read(./**/CMakeFiles/**)",
+      "Read(./**/cmake-build-*/**)",
+      "Read(./**/CMakeCache.txt)",
+      "Read(./**/.cache/clangd/**)",
+      "Read(./**/.ccls-cache/**)",
+      "Read(./**/*.o)",
+      "Read(./**/*.obj)",
+      "Read(./**/*.a)",
+      "Read(./**/*.lib)",
+      "Read(./**/*.so)",
+      "Read(./**/*.so.*)",
+      "Read(./**/*.dylib)",
+      "Read(./**/*.dll)",
+      "Read(./**/*.exe)",
+      "Read(./**/*.gch)",
+      "Read(./**/*.pch)",
+      "Read(./**/*.gcda)",
+      "Read(./**/*.gcno)",
+
+      "Read(./lua_modules/**)",
+      "Read(./.luarocks/**)",
+      "Read(./**/*.rock)",
+      "Read(./luacov.*.out)"
+    ]
+  },
+  "model": "opus",
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": false
+  },
+  "theme": "auto",
+  "agentPushNotifEnabled": true
+}
