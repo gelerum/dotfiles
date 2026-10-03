@@ -6,5 +6,5 @@
 git clone https://github.com/<you>/dotfiles ~/.dotfiles
 cd ~/.dotfiles
 
-stow -t ~ zsh nvim starship
+stow -t ~ zsh git nvim starship claude
 ```

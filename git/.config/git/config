@@ -1,0 +1,13 @@
+[commit]
+	gpgsign = true
+
+[gpg]
+	format = "ssh"
+
+[init]
+	defaultBranch = "main"
+
+[user]
+	email = "gelerum@gmail.com"
+	name = "Gleb Gonchar"
+	signingkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIE0/yW5Pklq/tNVwtnrlUjZz/r9+/d8dJ9H0JcWiGDR  "
