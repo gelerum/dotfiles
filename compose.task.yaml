@@ -1,0 +1,28 @@
+name: agent-${TASK:?TASK is not set}
+
+services:
+  agent:
+    image: devenv
+    init: true
+    userns_mode: keep-id
+    working_dir: ${PWD}.agent/${TASK}
+    environment:
+      - TERM
+      - COLORTERM
+      - EDITOR=nvim
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:?не задан CLAUDE_CODE_OAUTH_TOKEN}
+
+      - GIT_CONFIG_COUNT=2
+      - GIT_CONFIG_KEY_0=commit.gpgsign
+      - GIT_CONFIG_VALUE_0=false
+      - GIT_CONFIG_KEY_1=tag.gpgsign
+      - GIT_CONFIG_VALUE_1=false
+    volumes:
+      - ${PWD}.agent/${TASK}:${PWD}.agent/${TASK}:z
+      - ${PWD}/.git:${PWD}/.git:z
+      - ${PWD}/.git/config:${PWD}/.git/config:ro,z
+      - ${PWD}/.git/hooks:${PWD}/.git/hooks:ro,z
+      - claude-projects:/home/q/.claude/projects
+
+volumes:
+  claude-projects: {}

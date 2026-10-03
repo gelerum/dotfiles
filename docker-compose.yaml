@@ -6,16 +6,23 @@ services:
         UID: 1000
         GID: 1000 
         DOTFILES_REPO: https://github.com/gelerum/dotfiles
-        DOTFILES_REF: main
+        DOTFILES_REF: ${DOTFILES_REF:-main} 
         DOTFILES_PACKAGES: "zsh git starship claude nvim"
     init: true
+    userns_mode: keep-id
     environment:
       - TERM
       - COLORTERM
       - EDITOR=nvim
-      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:?не задан CLAUDE_CODE_OAUTH_TOKEN}
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:?CLAUDE_CODE_OAUTH_TOKEN is not set}
+
+      - GIT_CONFIG_COUNT=2
+      - GIT_CONFIG_KEY_0=commit.gpgsign
+      - GIT_CONFIG_VALUE_0=false
+      - GIT_CONFIG_KEY_1=tag.gpgsign
+      - GIT_CONFIG_VALUE_1=false
     volumes:
-      - .:/work
+      - .:/work:z
       - claude-projects:/home/q/.claude/projects
 
 volumes:
