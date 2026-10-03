@@ -7,7 +7,7 @@ services:
         GID: 1000 
         DOTFILES_REPO: https://github.com/gelerum/dotfiles
         DOTFILES_REF: ${DOTFILES_REF:-main} 
-        DOTFILES_PACKAGES: "zsh git starship claude nvim"
+        DOTFILES_PACKAGES: "zsh git starship claude nvim terminfo bat"
     init: true
     userns_mode: keep-id
     environment:
