@@ -1,0 +1,16 @@
+name: notify-devenv
+
+# Запускает пересборку образа в gelerum/devenv
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh api repos/gelerum/devenv/dispatches -f event_type=dotfiles-updated
+        env:
+          # Fine-grained PAT: доступ только к gelerum/devenv, Contents: Read and write
+          GH_TOKEN: ${{ secrets.DEVENV_DISPATCH_TOKEN }}

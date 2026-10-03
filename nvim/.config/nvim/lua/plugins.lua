@@ -28,6 +28,10 @@ return {
 					"dockerfile",
 					"gitcommit",
 					"gitignore",
+					"go",
+					"gomod",
+					"gosum",
+					"gowork",
 					"html",
 					"javascript",
 					"json",
@@ -47,7 +51,7 @@ return {
 					"yaml",
 				},
 				auto_install = true, -- доставлять парсер для нового языка автоматически
-				sync_install = false,
+				sync_install = #vim.api.nvim_list_uis() == 0, -- headless (сборка образа) — синхронно, иначе в фоне
 
 				highlight = { enable = true },
 				indent = { enable = true },
@@ -368,8 +372,25 @@ return {
 				},
 			})
 
+			-- gopls: staticcheck + инлей-подсказки (переключаются тем же хоткеем, что и в Rust).
+			vim.lsp.config("gopls", {
+				settings = {
+					gopls = {
+						staticcheck = true,
+						hints = {
+							assignVariableTypes = true,
+							compositeLiteralFields = true,
+							constantValues = true,
+							functionTypeParameters = true,
+							parameterNames = true,
+							rangeVariableTypes = true,
+						},
+					},
+				},
+			})
+
 			require("mason-lspconfig").setup({
-				ensure_installed = { "lua_ls", "basedpyright", "ruff", "rust_analyzer" },
+				-- Что ставить — см. mason-tool-installer ниже.
 				-- mason-lspconfig v2 сам включает всё установленное через vim.lsp.enable().
 				-- stylua — форматтер, а не LSP: без exclude он падает с exit code 2
 				-- на каждом .lua файле.
@@ -500,6 +521,45 @@ return {
 	},
 
 	-- =============================================
+	-- MASON TOOL INSTALLER (единый список LSP и форматтеров)
+	-- =============================================
+	-- Сборка образа:
+	-- nvim --headless "+Lazy! load nvim-treesitter mason-tool-installer.nvim" "+MasonToolsInstallSync" +qa
+	{
+		"WhoIsSethDaniel/mason-tool-installer.nvim",
+		dependencies = {
+			{ "williamboman/mason.nvim", config = true },
+			"williamboman/mason-lspconfig.nvim",
+		},
+		opts = function()
+			-- Инструменты по языкам. DEVENV_LANGS="python rust" — ставить только эти, не задана — все.
+			local by_lang = {
+				python = { "basedpyright", "ruff" },
+				lua = { "lua_ls", "stylua" },
+				rust = { "rust_analyzer" },
+				go = { "gopls", "goimports", "gofumpt" },
+			}
+
+			local langs = vim.split(vim.env.DEVENV_LANGS or "", "%s+", { trimempty = true })
+			if #langs == 0 then
+				langs = vim.tbl_keys(by_lang)
+				table.sort(langs)
+			end
+
+			local tools = {}
+			for _, lang in ipairs(langs) do
+				if by_lang[lang] then
+					vim.list_extend(tools, by_lang[lang])
+				else
+					vim.notify("DEVENV_LANGS: неизвестный язык '" .. lang .. "', пропускаю", vim.log.levels.WARN)
+				end
+			end
+
+			return { ensure_installed = tools }
+		end,
+	},
+
+	-- =============================================
 	-- CONFORM (Автоформатирование кода)
 	-- =============================================
 	{
@@ -523,6 +583,7 @@ return {
 					lua = { "stylua" },
 					python = { "ruff_organize_imports", "ruff_format" },
 					rust = { "rustfmt" },
+					go = { "goimports", "gofumpt" },
 				},
 
 				format_on_save = {
