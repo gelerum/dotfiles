@@ -9,6 +9,30 @@ vim.g.maplocalleader = " "
 -- System clipboard
 vim.opt.clipboard = "unnamedplus"
 
+-- OSC 52: копирование через сам терминал, без wl-copy/xclip.
+-- Нужно там, где системного буфера нет: по SSH и в контейнере devenv.
+-- Локально остаётся обычный провайдер — он умеет и вставлять из других программ.
+--
+-- Вставку через OSC 52 НЕ используем: ghostty на каждое чтение буфера
+-- спрашивает разрешение (clipboard-read = ask), а nvim ждёт ответа.
+-- Поэтому p вставляет последнее скопированное в самом nvim,
+-- а текст из браузера и т.п. — Ctrl+Shift+V терминала.
+-- provider#clipboard#Executable() тут не годится: он загружает провайдер
+-- раньше, чем задан g:clipboard, и тот потом пишет "No provider".
+local native = (vim.env.WAYLAND_DISPLAY and vim.fn.executable("wl-copy") == 1)
+	or (vim.env.DISPLAY and (vim.fn.executable("xclip") == 1 or vim.fn.executable("xsel") == 1))
+if vim.env.SSH_TTY or not native then
+	local osc52 = require("vim.ui.clipboard.osc52")
+	local function paste()
+		return { vim.fn.split(vim.fn.getreg(""), "\n"), vim.fn.getregtype("") }
+	end
+	vim.g.clipboard = {
+		name = "OSC 52",
+		copy = { ["+"] = osc52.copy("+"), ["*"] = osc52.copy("*") },
+		paste = { ["+"] = paste, ["*"] = paste },
+	}
+end
+
 -- Mouse
 vim.opt.mouse = "a"
 
