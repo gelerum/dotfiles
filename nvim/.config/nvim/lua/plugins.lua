@@ -125,6 +125,7 @@ return {
 					treesitter_context = true,
 					cmp = true,
 					gitsigns = true,
+					diffview = true,
 					mason = true,
 					which_key = true,
 					native_lsp = { enabled = true },
@@ -226,23 +227,93 @@ return {
 		event = { "BufReadPre", "BufNewFile" },
 		config = function()
 			require("gitsigns").setup({
+				current_line_blame = false, -- включается через <leader>hB
+				current_line_blame_opts = { delay = 300 },
+				preview_config = { border = "rounded" },
 				on_attach = function(bufnr)
 					local gs = require("gitsigns")
 					local function map(mode, lhs, rhs, desc)
 						vim.keymap.set(mode, lhs, rhs, { buffer = bufnr, desc = desc })
 					end
 
-					map("n", "]h", gs.next_hunk, "Next hunk")
-					map("n", "[h", gs.prev_hunk, "Prev hunk")
-					map("n", "<leader>hs", gs.stage_hunk, "Stage hunk")
+					-- Навигация по ханкам (nav_hunk вместо устаревших next_hunk/prev_hunk)
+					map("n", "]h", function()
+						gs.nav_hunk("next")
+					end, "Next hunk")
+					map("n", "[h", function()
+						gs.nav_hunk("prev")
+					end, "Prev hunk")
+					map("n", "]H", function()
+						gs.nav_hunk("last")
+					end, "Last hunk")
+					map("n", "[H", function()
+						gs.nav_hunk("first")
+					end, "First hunk")
+
+					-- Действия над ханком (stage_hunk на уже застейдженном ханке — unstage)
+					map("n", "<leader>hs", gs.stage_hunk, "Stage/unstage hunk")
 					map("n", "<leader>hr", gs.reset_hunk, "Reset hunk")
+					map("x", "<leader>hs", function()
+						gs.stage_hunk({ vim.fn.line("."), vim.fn.line("v") })
+					end, "Stage selected lines")
+					map("x", "<leader>hr", function()
+						gs.reset_hunk({ vim.fn.line("."), vim.fn.line("v") })
+					end, "Reset selected lines")
+					map("n", "<leader>hS", gs.stage_buffer, "Stage buffer")
+					map("n", "<leader>hR", gs.reset_buffer, "Reset buffer")
 					map("n", "<leader>hp", gs.preview_hunk, "Preview hunk")
+					map("n", "<leader>hi", gs.preview_hunk_inline, "Preview hunk inline")
+
+					-- Blame / diff
 					map("n", "<leader>hb", function()
 						gs.blame_line({ full = true })
 					end, "Blame line")
+					map("n", "<leader>hB", gs.toggle_current_line_blame, "Toggle line blame")
+					map("n", "<leader>hd", gs.diffthis, "Diff against index")
+					map("n", "<leader>hq", gs.setqflist, "Hunks to quickfix")
+					map("n", "<leader>hw", gs.toggle_word_diff, "Toggle word diff")
+
+					-- Текстовый объект: vih / dih / yih
+					map({ "o", "x" }, "ih", gs.select_hunk, "Select hunk")
 				end,
 			})
 		end,
+	},
+
+	-- =============================================
+	-- DIFFVIEW (git diff / история файлов / merge-конфликты)
+	-- =============================================
+	{
+		"sindrets/diffview.nvim",
+		cmd = {
+			"DiffviewOpen",
+			"DiffviewClose",
+			"DiffviewToggleFiles",
+			"DiffviewFocusFiles",
+			"DiffviewRefresh",
+			"DiffviewFileHistory",
+		},
+		keys = {
+			{ "<leader>gd", "<cmd>DiffviewOpen<CR>", desc = "Diffview: working tree" },
+			{ "<leader>gD", "<cmd>DiffviewOpen origin/HEAD...HEAD<CR>", desc = "Diffview: branch vs origin" },
+			{ "<leader>gh", "<cmd>DiffviewFileHistory %<CR>", desc = "Diffview: file history" },
+			{ "<leader>gH", "<cmd>DiffviewFileHistory<CR>", desc = "Diffview: repo history" },
+			{ "<leader>gh", ":DiffviewFileHistory<CR>", mode = "x", desc = "Diffview: selection history" },
+			{ "<leader>gq", "<cmd>DiffviewClose<CR>", desc = "Diffview: close" },
+		},
+		opts = {
+			enhanced_diff_hl = true,
+			view = {
+				-- 3-way для конфликтов: OURS | MERGED | THEIRS
+				merge_tool = { layout = "diff3_mixed" },
+			},
+			-- q закрывает diffview из любого его окна
+			keymaps = {
+				view = { { "n", "q", "<cmd>DiffviewClose<CR>", { desc = "Close Diffview" } } },
+				file_panel = { { "n", "q", "<cmd>DiffviewClose<CR>", { desc = "Close Diffview" } } },
+				file_history_panel = { { "n", "q", "<cmd>DiffviewClose<CR>", { desc = "Close Diffview" } } },
+			},
+		},
 	},
 
 	-- =============================================
