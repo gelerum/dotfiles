@@ -122,20 +122,6 @@ alias vi="nvim"
 alias v="nvim"
 
 # =============================================================================
-# 4. YAZI FILE MANAGER INTEGRATION
-# =============================================================================
-function y() {
-	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")"
-	yazi "$@" --cwd-file="$tmp"
-	if cwd="$(cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
-		builtin cd -- "$cwd"
-	fi
-	rm -f -- "$tmp"
-}
-alias fm="y"
-alias yy="yazi"
-
-# =============================================================================
 # 5. VI MODE + KEYBINDINGS
 # =============================================================================
 bindkey -v
