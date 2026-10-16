@@ -4,6 +4,6 @@
 # headless
 stow -t ~ zsh git nvim starship bat terminfo claude
 
-# полный (десктоп)
+# desktop
 stow -t ~ zsh git nvim starship bat terminfo claude niri noctalia ghostty satty
 ```
