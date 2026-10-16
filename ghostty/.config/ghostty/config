@@ -9,3 +9,5 @@ font-feature = liga
 background-opacity = 0.9
 background-blur-radius = 20
 shell-integration-features = ssh-terminfo
+# Отдавать буфер по OSC 52 без вопроса — для вставки в nvim в контейнере/по SSH
+clipboard-read = allow
