@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=Xwayland Video Bridge
+Exec=xwaylandvideobridge
+
+# Глушит /etc/xdg/autostart/org.kde.xwaylandvideobridge.desktop.
+# XDG-спецификация: файл с тем же именем в ~/.config/autostart перекрывает
+# системный, а Hidden=true означает «считать, что записи не существует».
+#
+# Зачем: в системном файле нет OnlyShowIn=KDE, поэтому мост стартует в любой
+# сессии. Под KWin его окно невидимо, а в niri оно всплывает поверх работы и
+# занимает слот в тайлинге.
+#
+# Что теряется: возможность для X11-приложений (старые сборки Zoom, Discord)
+# захватывать отдельные Wayland-окна. Для Wayland-нативных приложений шаринг
+# экрана работает через xdg-desktop-portal-gnome и этот мост не нужен.
+# Понадобится — поставьте Hidden=false или удалите этот файл.
+Hidden=true

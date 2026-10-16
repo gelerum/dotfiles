@@ -1,2 +1,5 @@
+# Starship prompt configuration.
+# Without this file starship runs on its built-in defaults, which append
+# "took 3s" to the prompt for any command slower than 2 seconds.
 [cmd_duration]
 disabled = true

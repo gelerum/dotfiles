@@ -1,2 +1,7 @@
+# python bytecode
 __pycache__/
 *.py[cod]
+
+# local sandbox, not part of the dotfiles
+docker-compose.yml
+Dockerfile

@@ -1,0 +1,41 @@
+# Редактор скриншотов поверх grim/slurp. Запускается через niri-биндинги
+# (Print — весь экран, Mod+Shift+S — область), см. niri/.config/niri/config.kdl.
+
+[general]
+early-exit = ["copy", "save"]        # после Enter/копирования — сразу закрыться
+corner-roundness = 12
+initial-tool = "arrow"               # стрелка — самый частый инструмент для «вот тут смотри»
+copy-command = "wl-copy"
+# Тот же формат имени, что и у встроенного скриншотера niri (screenshot-path) —
+# чтобы все скриншоты лежали рядом и одинаково назывались, независимо от того,
+# каким путём сделаны.
+output-filename = "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+actions-on-enter = ["save-to-clipboard", "save-to-file"]
+actions-on-escape = ["exit"]
+no-window-decoration = true
+
+[font]
+family = "Inter"
+style = "Regular"
+
+# Catppuccin Mocha — палитра инструментов рисования.
+[color-palette]
+palette = [
+    "#f38ba8", # red
+    "#fab387", # peach
+    "#f9e2af", # yellow
+    "#a6e3a1", # green
+    "#89b4fa", # blue
+    "#cba6f7", # mauve
+    "#cdd6f4", # text
+]
+custom = [
+    "#f38ba8",
+    "#fab387",
+    "#f9e2af",
+    "#a6e3a1",
+    "#89b4fa",
+    "#cba6f7",
+    "#f5c2e7", # pink
+    "#cdd6f4",
+]

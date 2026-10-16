@@ -1,0 +1,393 @@
+# ~/.config/noctalia/config.toml
+# Noctalia v5 + niri, тема Catppuccin.
+#
+# Здесь перечислено только то, что отличается от значений по умолчанию, плюс
+# несколько ключей оставлены явно (с дефолтным значением) там, где их полезно
+# видеть при правке. Полный список всех настроек — в example.toml репозитория
+# noctalia или через GUI: Mod+Comma / `noctalia msg settings-open`.
+#
+# ВАЖНО: если менять настройки в GUI, noctalia перезапишет этот файл —
+# комментарии пропадут. Правьте руками, а GUI используйте для просмотра.
+# Символическую ссылку stow noctalia не ломает: запись идёт сквозь неё.
+#
+# Почти всё перечитывается на лету через inotify, перезапуск не нужен.
+
+# ── Размер интерфейса ─────────────────────────────────────────────────────────
+# Основной масштаб задаётся в niri: output "eDP-1" { scale 2.0 } — noctalia
+# получает его от компоновщика через layer-shell и рисуется чётко.
+# ui_scale — ДОПОЛНИТЕЛЬНЫЙ множитель поверх него, только для панелей noctalia.
+# Трогайте, если бар и меню великоваты/мелковаты относительно остального.
+
+[accessibility]
+ui_scale      = 1.0
+high_contrast = false
+
+# ── Оболочка ──────────────────────────────────────────────────────────────────
+
+[shell]
+corner_radius_scale = 1.0
+# Inter — ближайший свободный аналог SF Pro, метрически близкий, но не копия.
+# Берём обычный, НЕ "Inter Display": тот нарисован под крупный кегль и в баре
+# выглядит хуже.
+font_family         = "Inter"
+time_format         = "{:%H:%M}"
+date_format         = "%A, %d %B"
+
+# Агент polkit встроен в шелл — отдельный polkit-gnome/kde запускать не надо
+# (в config.kdl его и нет).
+polkit_agent        = true
+
+# Включает «начни печатать в обзоре niri (Mod+O) — откроется лаунчер».
+niri_overview_type_to_launch_enabled = true
+
+clipboard_enabled             = true
+clipboard_history_max_entries = 200
+clipboard_auto_paste          = "auto"
+
+telemetry_enabled = false
+
+[shell.animation]
+enabled = true
+speed   = 1.15   # чуть резче: движение в macOS короткое, ~0.25–0.3 с
+
+[shell.panel]
+# glass = материал в терминах HIG: полупрозрачность + размытие, дающие
+# разделение слоёв. Дороже по GPU: размытие пересчитывается каждый кадр.
+# Начнёт греться или ронять fps — возвращайте "soft".
+transparency_mode = "glass"
+borders           = true
+shadow            = true
+
+# Лаунчер и буфер обмена — плавающими по центру, остальное прицеплено к бару.
+launcher_placement       = "floating"
+clipboard_placement      = "floating"
+control_center_placement = "attached"
+wallpaper_placement      = "attached"
+session_placement        = "attached"
+launcher_position        = "center"
+clipboard_position       = "center"
+
+[shell.launcher]
+categories    = false   # без фильтров по категориям — плоский список всех программ
+show_icons    = true
+sort_by_usage = true
+app_grid      = false
+# Префикс провайдеров: ввод "/calc 2+2", "/emo smile", "/win firefox".
+provider_prefix = "/"
+
+[shell.launcher.providers.calculator]
+prefix = "calc"
+global = true
+
+[shell.launcher.providers.windows]
+prefix = "win"
+
+# ── Тема ──────────────────────────────────────────────────────────────────────
+
+[theme]
+# auto — переключение по расписанию из [location]: с 06:00 светлая тема
+# (Catppuccin Latte), с 20:00 тёмная (Mocha).
+# Перебить вручную в любой момент:  noctalia msg theme-mode-toggle
+mode    = "auto"
+source  = "builtin"
+builtin = "Catppuccin"    # dark = Mocha (#1e1e2e / #cba6f7), light = Latte
+pure_black_dark = false   # true — чёрный фон вместо #1e1e2e (для OLED)
+
+[theme.templates]
+# ВЫКЛЮЧЕНО НАМЕРЕННО. Шаблоны перекрашивают чужие конфиги, ДОПИСЫВАЯ в них
+# строки: ghostty получает `theme = noctalia` в ~/.config/ghostty/config,
+# niri — `include "noctalia.kdl"` в config.kdl. С stow это значит запись
+# в этот репозиторий и расхождение с git.
+#
+# Цвета Catppuccin в niri прописаны статикой в config.kdl, так что шаблон niri
+# не нужен вовсе. Если захотите красить ghostty/btop/gtk из noctalia — впишите
+# id в builtin_ids и учтите, что чужие конфиги будут изменены:
+#   builtin_ids = ["ghostty", "btop", "gtk3", "gtk4", "starship"]
+# Полный список:  noctalia theme --list-templates
+enable_builtin_templates   = true
+builtin_ids                = []
+enable_community_templates = false
+community_ids              = []
+
+# ── Обои ──────────────────────────────────────────────────────────────────────
+
+[wallpaper]
+enabled   = true
+fill_mode = "crop"
+directory = "~/.wallpapers"           # каталог, из которого выбирается картинка
+transition          = ["fade", "wipe", "disc", "zoom"]
+transition_duration = 1200
+
+# Картинка при старте. Сейчас в каталоге она одна, так что перебирать нечего;
+# добавите файлы — они появятся в панели обоев (Mod+B) автоматически.
+[wallpaper.default]
+path = "~/.wallpapers/moon.jpg"
+
+[wallpaper.automation]
+enabled          = false   # true — менять обои по таймеру
+interval_seconds = 1800
+order            = "random"
+recursive        = true
+
+# ── Бар ───────────────────────────────────────────────────────────────────────
+
+[bar.main]
+# Геометрия по образцу меню-бара macOS: одна полоса вплотную к верхнему краю,
+# во всю ширину, без скругления и без тени. Высота 26 против 24 pt у Apple —
+# два пикселя запаса, потому что виджетов здесь заметно больше.
+position           = "top"
+thickness          = 26
+background_opacity = 0.72   # материал, а не сплошная заливка
+radius             = 0      # «островок» противоречит HIG: бар не в окне
+margin_ends        = 0
+margin_edge        = 0
+padding            = 12
+widget_spacing     = 6
+shadow             = false  # меню-бар macOS тень не отбрасывает
+
+# Бар прячется и выезжает при наведении на верхний край.
+# Аналог «Automatically hide and show the menu bar» в macOS.
+auto_hide          = true
+# false — бар выезжает ТОЛЬКО по наведению на верхний край.
+# При true он вдобавок мелькал на каждой смене рабочего стола.
+show_on_workspace_switch = false
+
+# Альтернатива: smart_auto_hide = true — бар виден на пустом рабочем столе
+# и прячется, как только на нём появляются окна. Тогда auto_hide не нужен.
+# smart_auto_hide  = true
+
+# ОБЯЗАТЕЛЬНО false вместе с auto_hide. В исходниках shouldReserveExclusiveZone()
+# возвращает reserve_space, не глядя на auto_hide: оставишь true — бар будет
+# прятаться, но полоса под ним останется зарезервированной и окна не вырастут.
+reserve_space      = false
+
+capsule            = false   # true — каждый виджет в отдельной «пилюле»
+
+start  = ["workspaces"]
+center = ["clock"]
+end    = ["media", "tray", "privacy", "notifications", "clipboard", "keyboard_layout", "network", "bluetooth", "volume", "brightness", "caffeine", "battery", "control-center", "session"]
+
+[widget.clock]
+# "14:00, Mon". %a — сокращённый день недели; язык берётся из LC_TIME
+# (сейчас en_US.UTF-8), потому что формат идёт через std::locale("").
+# Станет ru_RU — сам собой превратится в "пн".
+format         = "{:%H:%M, %a}"
+tooltip_format = "{:%A, %d %B %Y}"
+
+[widget.keyboard_layout]
+display                 = "short"   # "US" / "RU"
+show_icon               = false
+show_label              = true
+hide_when_single_layout = true      # в config.kdl раскладки две — виджет виден
+
+[widget.media]
+# Только обложка, без названия трека и исполнителя.
+# При album_art_only настройки min_length/max_length/hide_artist/artist_first
+# перестают действовать — текста, к которому они применялись, больше нет.
+album_art_only     = true
+art_size           = 16
+hide_when_no_media = true   # ничего не играет — виджет не занимает место
+
+[widget.notifications]
+hide_when_no_unread = false
+
+# ── Подложка ──────────────────────────────────────────────────────────────────
+# ВЫКЛЮЧЕНО. Это НЕ «размытие под открытой панелью», как можно решить по
+# названию: Backdrop поднимает собственный постоянный слой (namespace
+# "noctalia-backdrop") поверх "noctalia-wallpaper" и рисует в нём размытую
+# копию тех же обоев. Включишь — обои размыты всегда, а не по случаю.
+# Проверить, что слоя нет:  niri msg layers
+
+[backdrop]
+enabled        = false
+blur_intensity = 0.5
+tint_intensity = 0.3
+
+# ── Уведомления ───────────────────────────────────────────────────────────────
+
+[notification]
+enable_daemon      = true   # своего демона (mako/dunst) запускать НЕ надо
+show_app_name      = true
+show_actions       = true
+background_opacity = 0.97
+offset_x           = 16
+offset_y           = 10
+
+# ── OSD (громкость / яркость) ─────────────────────────────────────────────────
+
+[osd]
+# В macOS начиная с Ventura HUD громкости и яркости живёт в правом верхнем
+# углу, рядом с иконками статуса, а не по центру экрана.
+position           = "top_right"
+orientation        = "horizontal"
+background_opacity = 0.97
+offset_y           = 12
+
+[osd.kinds]
+volume          = true
+brightness      = true
+caffeine        = true
+dnd             = true
+keyboard_layout = true
+privacy         = true
+lock_keys       = false   # опрос Caps/Num Lock отключён — виджета для них нет
+
+# ── Экран блокировки ──────────────────────────────────────────────────────────
+# Вызывается через `noctalia msg session lock` (Mod+Alt+L в niri).
+# swaylock/gtklock не нужны.
+
+[lockscreen]
+enabled         = true
+blurred_desktop = false   # true — снимок рабочего стола с блюром вместо обоев
+blur_intensity  = 0.5
+tint_intensity  = 0.3
+
+# ── Простой / энергосбережение ────────────────────────────────────────────────
+# Оба таймера ВЫКЛЮЧЕНЫ. Включите enabled = true, когда убедитесь, что
+# локскрин работает — иначе рискуете залипнуть на неготовом экране блокировки.
+
+[idle]
+pre_action_fade_seconds = 3.0   # плавное затемнение перед действием; ввод отменяет
+
+# Лестница простоя: сначала блокировка, потом гашение экрана, потом сон.
+# Действия: lock | screen_off | suspend | lock_and_suspend | command
+
+[idle.behavior.lock]
+enabled = true
+timeout = 600      # 10 минут — блокировка
+action  = "lock"
+
+[idle.behavior.screen-off]
+enabled = true
+timeout = 900      # 15 минут — гасим подсветку (экран включится от любой клавиши)
+action  = "screen_off"
+
+# lock_and_suspend, а не suspend: блокирует ПЕРЕД засыпанием, поэтому при
+# пробуждении сразу экран ввода пароля, а не открытая сессия.
+[idle.behavior.suspend]
+enabled = true
+timeout = 1800     # 30 минут — сон
+action  = "lock_and_suspend"
+
+# ── Яркость ───────────────────────────────────────────────────────────────────
+
+[brightness]
+# Встроенная панель ноутбука управляется через sysfs автоматически.
+# ddcutil нужен только для внешних мониторов по DDC/CI (и требует i2c-dev).
+enable_ddcutil     = false
+minimum_brightness = 0.05   # чтобы не увести экран в полную темноту
+
+# ── Звук ──────────────────────────────────────────────────────────────────────
+
+[audio]
+enable_overdrive = false   # true — громкость выше 100% (до 150%)
+enable_sounds    = false
+
+# ── Системный монитор ─────────────────────────────────────────────────────────
+# Питает виджет sysmon и вкладку System в центре управления.
+
+[system.monitor]
+enabled             = true
+cpu_poll_seconds    = 2.0
+memory_poll_seconds = 2.0
+network_poll_seconds = 3.0
+disk_poll_seconds   = 10.0
+
+# ── Погода и местоположение ───────────────────────────────────────────────────
+# Выключено: погода ходит в интернет и требует координат. Чтобы включить —
+# поставьте enabled = true и укажите address (или auto_locate = true).
+
+[weather]
+enabled         = false
+unit            = "celsius"
+refresh_minutes = 30
+
+[location]
+auto_locate = false
+address     = ""
+
+# Единый источник «день/ночь» для темы И для ночного света. custom_schedule
+# берёт время отсюда вместо расчёта восхода/заката по координатам — поэтому
+# ни адрес, ни широта/долгота не нужны и в интернет шелл за ними не ходит.
+# Оба поля обязательны в формате HH:MM, иначе конфиг не пройдёт валидацию.
+custom_schedule = true
+sunrise         = "06:00"    # день начинается: светлая тема + нейтральный белый
+sunset          = "20:00"    # ночь начинается: тёмная тема + тёплый экран
+
+# ── Ночной свет ───────────────────────────────────────────────────────────────
+# Тёплые цвета ночью, по тому же расписанию из [location].
+# Переход между температурами плавный, не рывком в 20:00.
+
+[nightlight]
+enabled           = true
+force             = false    # true — держать ночную температуру круглосуточно
+temperature_day   = 6500     # нейтральный дневной белый
+temperature_night = 3800     # тёплый; ниже 3500 экран заметно желтит
+
+# ── Календарь ─────────────────────────────────────────────────────────────────
+
+[calendar]
+enabled = false   # true — подтягивать события (нужен настроенный источник)
+
+[control_center.calendar]
+show_events_card  = false
+show_week_numbers = true
+event_time_format = "%H:%M"
+
+# ── Док ───────────────────────────────────────────────────────────────────────
+# Выключен: в прокручиваемом layout'е niri панель задач сверху обычно избыточна.
+# Поставьте enabled = true и заполните pinned, если нужен.
+
+[dock]
+enabled = false
+position = "bottom"
+icon_size = 44
+auto_hide = true
+pinned = []
+
+# ── Хуки ──────────────────────────────────────────────────────────────────────
+
+[hooks]
+# Транслирует переключение темы наружу, в остальную систему.
+#
+# Зачем: в 06:00 noctalia сама переходит на Latte, но GTK-приложения и ghostty
+# смотрят не на неё, а на портал xdg-desktop-portal, который читает ключ
+# org.gnome.desktop.interface color-scheme из dconf. Без этой строки они
+# остаются тёмными до конца суток.
+#
+# $NOCTALIA_THEME_MODE отдаёт ровно "dark" или "light", поэтому подстановка
+# даёт валидные prefer-dark / prefer-light без всякого case.
+theme_mode_changed = "gsettings set org.gnome.desktop.interface color-scheme prefer-$NOCTALIA_THEME_MODE"
+
+# Ниже 20% на разряде — переключить профиль питания на power-saver.
+# Хук срабатывает на каждый процент, поэтому порог, проверка состояния и
+# защита от повторных переключений вынесены в скрипт.
+# Имя ключа проверено через `noctalia config validate`: в example.toml он
+# назван battery_under_threshold, но эта сборка знает только вот такое.
+battery_percentage_changed = "noctalia-battery-guard"
+
+# Гасить экран сразу после блокировки, не дожидаясь таймера простоя.
+# Внутри это niri-действие PowerOffMonitors — то же, что бинд Mod+Shift+P.
+# Экран включается обратно от любого нажатия клавиши или движения мыши,
+# отдельный dpms-on не нужен.
+session_locked = "noctalia msg dpms-off"
+
+# ── Быстрые кнопки в центре управления ────────────────────────────────────────
+
+[[control_center.shortcuts]]
+type = "wifi"
+
+[[control_center.shortcuts]]
+type = "bluetooth"
+
+[[control_center.shortcuts]]
+type = "nightlight"
+
+[[control_center.shortcuts]]
+type = "notification"
+
+[[control_center.shortcuts]]
+type = "wallpaper"
+
+[[control_center.shortcuts]]
+type = "session"

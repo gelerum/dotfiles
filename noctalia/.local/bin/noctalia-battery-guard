@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Понижает профиль питания, когда батарея садится.
+#
+# Вызывается хуком noctalia battery_percentage_changed, который срабатывает
+# на КАЖДОЕ изменение процента. Поэтому вся защита от лишней работы здесь:
+# смена профиля tuned не бесплатна, дёргать её на каждый процент нельзя.
+#
+# Переменные приходят от noctalia (src/hooks/battery_hook_state.cpp):
+#   NOCTALIA_BATTERY_PERCENT  — целое, 0..100
+#   NOCTALIA_BATTERY_STATE    — charging | discharging | empty | ""
+#
+# Порог по умолчанию 20%, переопределяется переменной окружения.
+set -u
+
+THRESHOLD="${BATTERY_GUARD_THRESHOLD:-20}"
+TARGET="${BATTERY_GUARD_PROFILE:-power-saver}"
+
+percent="${NOCTALIA_BATTERY_PERCENT:-}"
+state="${NOCTALIA_BATTERY_STATE:-}"
+
+# Только при разряде. На зарядке профиль не трогаем: пользователь мог
+# осознанно включить performance, воткнув ноутбук в розетку.
+[[ "$state" == "discharging" ]] || exit 0
+
+# Пустое или нечисловое значение — молча выходим, а не падаем в хуке.
+[[ "$percent" =~ ^[0-9]+$ ]] || exit 0
+(( percent < THRESHOLD )) || exit 0
+
+# Уже в нужном профиле — выходим, не дёргая tuned лишний раз.
+current=$(busctl --system get-property net.hadess.PowerProfiles \
+    /net/hadess/PowerProfiles net.hadess.PowerProfiles ActiveProfile 2>/dev/null)
+[[ "$current" == *"$TARGET"* ]] && exit 0
+
+noctalia msg power-set "$TARGET" >/dev/null 2>&1
+noctalia msg notification-show "Питание" \
+    "Заряд ${percent}% — профиль переключён на ${TARGET}" >/dev/null 2>&1

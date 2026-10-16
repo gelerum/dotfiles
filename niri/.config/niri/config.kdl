@@ -1,0 +1,462 @@
+// ~/.config/niri/config.kdl
+// niri + noctalia (v5) + ghostty, тема Catppuccin Mocha.
+//
+// Панель, лаунчер, буфер обмена, уведомления, обои, локскрин и OSD — всё это
+// noctalia. Поэтому здесь НЕТ waybar/fuzzel/swaylock/swaybg/mako: они бы
+// дублировали и конфликтовали с шеллом.
+//
+// Проверка после правок:  niri validate
+// Список действий:        niri msg action --help
+
+// =============================================================================
+// ОКРУЖЕНИЕ
+// =============================================================================
+environment {
+    // Firefox/Thunderbird на Wayland.
+    MOZ_ENABLE_WAYLAND "1"
+    // "wayland;xcb" — сначала Wayland, откат на X11 для старых Qt-приложений.
+    QT_QPA_PLATFORM "wayland;xcb"
+    GDK_BACKEND "wayland,x11"
+    // Electron (VSCode, Obsidian, Discord) сам выберет Wayland вместо Xwayland.
+    ELECTRON_OZONE_PLATFORM_HINT "auto"
+    // Qt рисует свои заголовки окон — иначе с prefer-no-csd ниже окна Qt
+    // остаются без рамки и их нельзя таскать.
+    QT_WAYLAND_DISABLE_WINDOWDECORATION "1"
+}
+
+// =============================================================================
+// АВТОЗАПУСК
+// =============================================================================
+// Один процесс на весь десктоп: бар, лаунчер, уведомления, обои, OSD, локскрин.
+// --daemon обязателен: без него noctalia отработает как CLI и выйдет.
+spawn-at-startup "noctalia" "--daemon"
+
+// X11-приложения: niri 26.04 сам поднимает xwayland-satellite и выставляет
+// DISPLAY, если бинарник есть в PATH. Отдельный spawn-at-startup не нужен;
+// блок `xwayland-satellite { path "..." }` — только для нестандартного пути.
+
+// Portal нужен для скриншотов, шаринга экрана и файловых диалогов. niri ставит
+// его юниты сам, но на смешанной KDE-системе порядок запуска бывает неверным —
+// эта строка гарантирует, что переменные окружения сессии уже импортированы.
+spawn-at-startup "sh" "-c" "systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP"
+
+// =============================================================================
+// ВВОД
+// =============================================================================
+input {
+    keyboard {
+        xkb {
+            layout "us,ru"
+            // Переключение раскладки задано биндом Mod+Space { switch-layout }
+            // ниже, а НЕ xkb-опцией grp:*. switch-layout — родное действие niri,
+            // оно работает предсказуемо и не конкурирует с остальными биндами
+            // за ту же комбинацию (в отличие от grp:win_space_toggle).
+            options "compose:ralt"
+        }
+        // repeat-delay — пауза перед началом повтора, мс.
+        // repeat-rate  — сколько символов в секунду после её истечения.
+        // Было 300/40: повтор стартовал рано и шёл 40 симв/с, поэтому Backspace
+        // сносил слово раньше, чем успеваешь отпустить. Дефолты niri — 600/25.
+        repeat-delay 400
+        repeat-rate 20
+    }
+
+    touchpad {
+        tap
+        dwt                          // disable-while-typing
+        natural-scroll
+        scroll-method "two-finger"
+        accel-profile "adaptive"
+        click-method "clickfinger"   // два пальца = ПКМ, три = СКМ
+    }
+
+    mouse {
+        // Для мыши ускорение обычно только мешает.
+        accel-profile "flat"
+    }
+
+    // Фокус за мышью выключен намеренно: с прокручиваемым layout'ом niri
+    // курсор постоянно оказывается над соседней колонкой при её сдвиге.
+    // Раскомментируйте, если привыкли к sloppy focus:
+    // focus-follows-mouse max-scroll-amount="0%"
+
+    // Курсор прыгает к окну, на которое переключился фокус с клавиатуры.
+    warp-mouse-to-focus
+
+    // Раскладка запоминается для каждого окна отдельно.
+    // Уберите, если хотите одну общую раскладку на всю сессию.
+    // track-layout "window"
+}
+
+// =============================================================================
+// МОНИТОРЫ
+// =============================================================================
+// Имена смотреть в:  niri msg outputs
+//
+// Встроенная панель: 2560x1440 на 31x17 см (13.9") = 210 PPI.
+// scale 1.75 -> логические 1463x823, эффективные ~120 PPI.
+// Соседние варианты: 1.5 -> 1707x960, 1.25 -> 2048x1152, 2.0 -> 1280x720.
+// Дробный масштаб должен быть кратен 1/8, иначе niri округлит его сам.
+output "eDP-1" {
+    // mode "2560x1440@59.998"    // раскомментируйте, если niri выберет не тот режим
+    scale 1.75
+    transform "normal"
+    position x=0 y=0
+    // Переменная частота обновления, если панель умеет:
+    // variable-refresh-rate on-demand
+}
+
+// Внешний монитор 1920x1080 — обычный DPI, масштаб не нужен. Без этого блока
+// niri применил бы к нему автоподбор и картинка была бы крупнее нужного.
+output "HDMI-A-2" {
+    scale 1.0
+    position x=1280 y=0    // справа от eDP-1 (1280 — его ЛОГИЧЕСКАЯ ширина при scale 2)
+}
+
+// =============================================================================
+// LAYOUT + ЦВЕТА CATPPUCCIN MOCHA
+// =============================================================================
+// mauve #cba6f7 — акцент (активное окно)
+// surface2 #585b70 / surface1 #45475a — неактивное
+// red #f38ba8 — urgent, crust #11111b — тень
+layout {
+    gaps 8    // сетка 8 pt
+
+    // "never" — колонки живут слева направо как в тайлинге;
+    // "on-overflow" центрирует активную колонку, когда она не влезает.
+    center-focused-column "never"
+
+    // Mod+R циклит по этим ширинам.
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+
+    // Mod+Shift+R циклит по высотам.
+    preset-window-heights {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+
+    default-column-width { proportion 0.5; }
+
+    // Тонкое кольцо вокруг активного окна. Дешевле рамки: не занимает место
+    // в раскладке и не смещает содержимое окна.
+    focus-ring {
+        width 2
+        active-color "#cba6f7"
+        inactive-color "#585b70"
+        urgent-color "#f38ba8"
+    }
+
+    // Рамка выключена — иначе будет двойная обводка вместе с focus-ring.
+    // Если предпочитаете рамку: включите `on` здесь и `off` в focus-ring.
+    border {
+        off
+        width 2
+        active-color "#cba6f7"
+        inactive-color "#45475a"
+        urgent-color "#f38ba8"
+    }
+
+    // Тень по образцу macOS: широкая, мягкая, уходящая вниз, без ореола.
+    // spread 0 принципиален — ненулевой spread раздувает силуэт и даёт
+    // видимую кайму вместо рассеянной тени.
+    shadow {
+        on
+        softness 45
+        spread 0
+        offset x=0 y=10
+        // Последние два символа — альфа: 70 ≈ 44% непрозрачности.
+        color "#11111b70"
+    }
+
+    // Индикатор вкладок для Mod+W (табулированные колонки).
+    tab-indicator {
+        width 4
+        gap 5
+        length total-proportion=1.0
+        position "left"
+        gaps-between-tabs 2
+        corner-radius 8
+        active-color "#cba6f7"
+        inactive-color "#585b70"
+        urgent-color "#f38ba8"
+    }
+
+    // Подсветка места, куда упадёт окно при drag&drop.
+    insert-hint {
+        color "#cba6f780"
+    }
+
+    // Пусто: noctalia сама резервирует место под бар через layer-shell
+    // (reserve_space = true в config.toml). Дублировать struts не нужно.
+    struts { }
+}
+
+// =============================================================================
+// ОБЗОР (Mod+O)
+// =============================================================================
+overview {
+    zoom 0.5
+    backdrop-color "#181825"      // mantle
+}
+
+// =============================================================================
+// ВНЕШНИЙ ВИД
+// =============================================================================
+// Просим приложения не рисовать свои заголовки — их роль выполняет focus-ring.
+prefer-no-csd
+
+cursor {
+    xcursor-theme "Adwaita"
+    xcursor-size 24
+    hide-when-typing
+}
+
+screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+
+// Подсказка по клавишам не выскакивает при каждом старте (Mod+Shift+/ вручную).
+hotkey-overlay {
+    skip-at-startup
+}
+
+gestures {
+    // Горячие углы мешают, когда бар noctalia сверху.
+    hot-corners {
+        off
+    }
+}
+
+animations {
+    // Всё включено по умолчанию. Целиком выключить:  off
+    // 0.85 — короче дефолта: движение в macOS укладывается в ~0.25–0.3 с.
+    slowdown 0.85
+}
+
+// =============================================================================
+// ПРАВИЛА ОКОН
+// =============================================================================
+// Скругление углов для всех окон — под стать скруглённым панелям noctalia.
+window-rule {
+    geometry-corner-radius 10
+    clip-to-geometry true
+}
+
+// Системные утилиты и диалоги — плавающими.
+window-rule {
+    match app-id=r#"^(pavucontrol|org\.pulseaudio\.pavucontrol|blueman-manager|nm-connection-editor|zenity|org\.gnome\.Calculator)$"#
+    open-floating true
+}
+
+// Агент polkit: отдельным правилом, потому что ему нужен ещё и фокус.
+window-rule {
+    match app-id=r#"^(org\.kde\.polkit-kde-authentication-agent-1|polkit-gnome-authentication-agent-1)$"#
+    open-floating true
+    open-focused true
+}
+
+// Picture-in-Picture поверх всех окон и без тени.
+window-rule {
+    match title=r#"^(Picture-in-Picture|Picture in picture)$"#
+    open-floating true
+    default-floating-position x=32 y=32 relative-to="bottom-right"
+}
+
+// =============================================================================
+// ПРАВИЛА LAYER-ПОВЕРХНОСТЕЙ (noctalia)
+// =============================================================================
+// ВНИМАНИЕ, не включайте place-within-backdrop для обоев:
+//
+//   layer-rule {
+//       match namespace="^noctalia-wallpaper$"
+//       place-within-backdrop true    // <- так делать не надо
+//   }
+//
+// Эта опция ПЕРЕНОСИТ слой обоев в backdrop niri, а не копирует его туда.
+// Backdrop рисуется только в обзоре и в промежутках между рабочими столами,
+// поэтому в обычном режиме обои пропадают из-под окон и остаётся заливка
+// backdrop-color. Осмысленно это лишь тогда, когда есть вторая, отдельная
+// картинка на самих рабочих столах.
+//
+// Сейчас правил для слоёв noctalia нет — обои рисуются штатно под окнами,
+// а в обзоре фоном идёт overview { backdrop-color } из блока выше.
+
+// =============================================================================
+// КЛАВИШИ
+// =============================================================================
+// Mod = Super. hotkey-overlay-title задаёт подпись в Mod+Shift+/.
+binds {
+    Mod+Shift+Slash { show-hotkey-overlay; }
+
+    // --- Запуск ------------------------------------------------------------
+    Mod+Return hotkey-overlay-title="Терминал: ghostty" { spawn "ghostty"; }
+    Mod+T      hotkey-overlay-title="Терминал: ghostty" { spawn "ghostty"; }
+
+    // --- Раскладка клавиатуры ----------------------------------------------
+    // Fn на этом ThinkPad шлёт не отдельный скан-код, а KEY_WAKEUP (evtest
+    // подтвердил), который xkb превращает в кейсим XF86WakeUp. Обрабатывает
+    // сам niri, а не xkb (см. комментарий в input{}). При двух раскладках
+    // next и prev — одно и то же действие, второй бинд не нужен.
+    XF86WakeUp { switch-layout "next"; }
+
+    // --- Лаунчер и панели noctalia -----------------------------------------
+    // `|| noctalia --daemon` — подстраховка: если демон ещё не поднялся или
+    // упал, первое нажатие его запустит. Второй экземпляр не появится —
+    // у noctalia есть flock-защита, лишний запуск просто скажет
+    // "noctalia is already running" и выйдет.
+    Mod+D hotkey-overlay-title="Лаунчер" {
+        spawn-sh "noctalia msg panel-toggle launcher || noctalia --daemon"
+    }
+    Mod+V hotkey-overlay-title="История буфера обмена" {
+        spawn "noctalia" "msg" "panel-toggle" "clipboard"
+    }
+    Mod+N hotkey-overlay-title="Центр управления" {
+        spawn "noctalia" "msg" "panel-toggle" "control-center"
+    }
+    Mod+B hotkey-overlay-title="Выбор обоев" {
+        spawn "noctalia" "msg" "panel-toggle" "wallpaper"
+    }
+    Mod+Escape hotkey-overlay-title="Меню сессии" {
+        spawn "noctalia" "msg" "panel-toggle" "session"
+    }
+    Mod+Comma hotkey-overlay-title="Настройки noctalia" {
+        spawn "noctalia" "msg" "settings-toggle"
+    }
+    Mod+Alt+L hotkey-overlay-title="Заблокировать экран" {
+        spawn "noctalia" "msg" "session" "lock"
+    }
+    Mod+Shift+B hotkey-overlay-title="Скрыть/показать бар" {
+        spawn "noctalia" "msg" "bar-toggle"
+    }
+
+    // --- Окна --------------------------------------------------------------
+    Mod+Q { close-window; }
+    Mod+Shift+Q { quit; }
+    Mod+Shift+P { power-off-monitors; }
+
+    // --- Фокус: hjkl и стрелки ---------------------------------------------
+    Mod+H     { focus-column-left; }
+    Mod+L     { focus-column-right; }
+    Mod+J     { focus-window-down; }
+    Mod+K     { focus-window-up; }
+    Mod+Left  { focus-column-left; }
+    Mod+Right { focus-column-right; }
+    Mod+Down  { focus-window-down; }
+    Mod+Up    { focus-window-up; }
+
+    Mod+Home { focus-column-first; }
+    Mod+End  { focus-column-last; }
+
+    // --- Перемещение окон --------------------------------------------------
+    Mod+Shift+H     { move-column-left; }
+    Mod+Shift+L     { move-column-right; }
+    Mod+Shift+J     { move-window-down; }
+    Mod+Shift+K     { move-window-up; }
+    Mod+Shift+Left  { move-column-left; }
+    Mod+Shift+Right { move-column-right; }
+    Mod+Shift+Down  { move-window-down; }
+    Mod+Shift+Up    { move-window-up; }
+
+    Mod+Shift+Home { move-column-to-first; }
+    Mod+Shift+End  { move-column-to-last; }
+
+    // --- Слияние / разделение колонок --------------------------------------
+    // Затянуть соседнее окно в текущую колонку / вытолкнуть наружу.
+    Mod+BracketLeft  { consume-or-expel-window-left; }
+    Mod+BracketRight { consume-or-expel-window-right; }
+
+    // --- Размеры -----------------------------------------------------------
+    Mod+R       { switch-preset-column-width; }
+    Mod+Shift+R { switch-preset-window-height; }
+    Mod+F       { maximize-column; }
+    Mod+Shift+F { fullscreen-window; }
+    Mod+Ctrl+F  { expand-column-to-available-width; }
+    Mod+C       { center-column; }
+
+    Mod+Minus       { set-column-width "-10%"; }
+    Mod+Equal       { set-column-width "+10%"; }
+    Mod+Shift+Minus { set-window-height "-10%"; }
+    Mod+Shift+Equal { set-window-height "+10%"; }
+
+    // --- Вкладки и плавающие окна ------------------------------------------
+    // Mod+Space и Mod+Shift+Space отданы под раскладку, поэтому плавающие
+    // окна переехали на V (как в дефолтном конфиге niri, только со Shift/Ctrl,
+    // потому что чистый Mod+V — это буфер обмена).
+    Mod+W        { toggle-column-tabbed-display; }
+    Mod+Shift+V  { toggle-window-floating; }
+    Mod+Ctrl+V   { switch-focus-between-floating-and-tiling; }
+
+    // --- Обзор -------------------------------------------------------------
+    Mod+O repeat=false { toggle-overview; }
+
+    // --- Рабочие столы -----------------------------------------------------
+    Mod+Tab { focus-workspace-previous; }
+
+    Mod+Page_Down { focus-workspace-down; }
+    Mod+Page_Up   { focus-workspace-up; }
+    Mod+Shift+Page_Down { move-column-to-workspace-down; }
+    Mod+Shift+Page_Up   { move-column-to-workspace-up; }
+
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+3 { focus-workspace 3; }
+    Mod+4 { focus-workspace 4; }
+    Mod+5 { focus-workspace 5; }
+    Mod+6 { focus-workspace 6; }
+    Mod+7 { focus-workspace 7; }
+    Mod+8 { focus-workspace 8; }
+    Mod+9 { focus-workspace 9; }
+
+    Mod+Shift+1 { move-column-to-workspace 1; }
+    Mod+Shift+2 { move-column-to-workspace 2; }
+    Mod+Shift+3 { move-column-to-workspace 3; }
+    Mod+Shift+4 { move-column-to-workspace 4; }
+    Mod+Shift+5 { move-column-to-workspace 5; }
+    Mod+Shift+6 { move-column-to-workspace 6; }
+    Mod+Shift+7 { move-column-to-workspace 7; }
+    Mod+Shift+8 { move-column-to-workspace 8; }
+    Mod+Shift+9 { move-column-to-workspace 9; }
+
+    // Колесо мыши с Mod: прокрутка колонок. cooldown-ms гасит инерцию тачпада,
+    // иначе один жест пролистывает десяток колонок.
+    Mod+WheelScrollDown      cooldown-ms=150 { focus-column-right; }
+    Mod+WheelScrollUp        cooldown-ms=150 { focus-column-left; }
+    Mod+Shift+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
+    Mod+Shift+WheelScrollUp   cooldown-ms=150 { focus-workspace-up; }
+
+    // --- Скриншоты ---------------------------------------------------------
+    // Без Ctrl — сразу сохранить, встроенным скриншотером niri (выделение
+    // мышью, Enter — снять, копия в буфер заодно). С Ctrl — та же область/
+    // экран, но через grim, а результат открывается в satty для разметки
+    // (стрелки/блюр/текст), сохранение и копия в буфер там по Enter —
+    // см. satty/.config/satty/config.toml.
+    Print            { screenshot; }
+    Shift+Print      { screenshot-screen; }
+    Ctrl+Print       { spawn "sh" "-c" "grim -g \"$(slurp)\" - | satty --filename -"; }
+    Ctrl+Shift+Print { spawn "sh" "-c" "grim - | satty --filename -"; }
+    Alt+Print        { screenshot-window; }
+
+    // --- Звук --------------------------------------------------------------
+    // Через noctalia, а не wpctl: так показывается OSD и обновляется виджет бара.
+    // allow-when-locked=true — чтобы работало на локскрине.
+    XF86AudioRaiseVolume allow-when-locked=true { spawn "noctalia" "msg" "volume-up"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn "noctalia" "msg" "volume-down"; }
+    XF86AudioMute        allow-when-locked=true { spawn "noctalia" "msg" "volume-mute"; }
+    XF86AudioMicMute     allow-when-locked=true { spawn "noctalia" "msg" "mic-mute"; }
+
+    // --- Яркость -----------------------------------------------------------
+    // Шаг в процентах. brightness-set задаёт АБСОЛЮТНОЕ значение — здесь нужны
+    // именно brightness-up/down.
+    XF86MonBrightnessUp   allow-when-locked=true { spawn "noctalia" "msg" "brightness-up" "5"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn "noctalia" "msg" "brightness-down" "5"; }
+
+    // --- Медиаплееры -------------------------------------------------------
+    // MPRIS-клиента в IPC noctalia нет, поэтому здесь playerctl.
+    XF86AudioPlay allow-when-locked=true { spawn "playerctl" "play-pause"; }
+    XF86AudioPause allow-when-locked=true { spawn "playerctl" "play-pause"; }
+    XF86AudioNext allow-when-locked=true { spawn "playerctl" "next"; }
+    XF86AudioPrev allow-when-locked=true { spawn "playerctl" "previous"; }
+}
