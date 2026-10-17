@@ -13,7 +13,7 @@ const HOME = os.homedir();
 
 // Каталоги, внутри которых запрещено всё
 const DIRS = [".git", "node_modules", ".venv"];
-const HOME_DIRS = [".ssh", ".gnupg", ".pi/agent/sessions", ".claude/projects"].map((d) => path.join(HOME, d));
+const HOME_DIRS = [".ssh", ".gnupg", ".pi/agent/sessions", ".pi/agent/subagents", ".claude/projects"].map((d) => path.join(HOME, d));
 const HOME_FILES = [".pi/agent/auth.json", ".config/devenv/claude.env"].map((f) => path.join(HOME, f));
 
 function reason(file: string): string | undefined {

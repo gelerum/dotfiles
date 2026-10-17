@@ -2,10 +2,15 @@
   "defaultProjectTrust": "always",
   "enableInstallTelemetry": false,
   "theme": "catppuccin-latte/catppuccin-mocha",
-  "npmCommand": ["bun"],
+  "npmCommand": [
+    "bun"
+  ],
   "packages": [],
   "defaultProvider": "anthropic",
   "defaultModel": "claude-opus-5-5",
   "quietStartup": true,
-  "warnings": { "anthropicExtraUsage": false }
+  "warnings": {
+    "anthropicExtraUsage": false
+  },
+  "lastChangelogVersion": "1.3.0"
 }
