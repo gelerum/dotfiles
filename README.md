@@ -2,8 +2,8 @@
 
 ```sh
 # headless
-stow -t ~ zsh git nvim starship bat terminfo claude
+stow -t ~ zsh git nvim starship bat terminfo claude pi
 
 # desktop
-stow -t ~ zsh git nvim starship bat terminfo claude niri noctalia ghostty satty
+stow -t ~ zsh git nvim starship bat terminfo claude pi niri noctalia ghostty satty
 ```
