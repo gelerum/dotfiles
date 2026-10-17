@@ -3,5 +3,9 @@
   "enableInstallTelemetry": false,
   "theme": "catppuccin-latte/catppuccin-mocha",
   "npmCommand": ["bun"],
-  "packages": []
+  "packages": [],
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-opus-5-5",
+  "quietStartup": true,
+  "warnings": { "anthropicExtraUsage": false }
 }
