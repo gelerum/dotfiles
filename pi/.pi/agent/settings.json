@@ -3,5 +3,5 @@
   "enableInstallTelemetry": false,
   "theme": "catppuccin-latte/catppuccin-mocha",
   "npmCommand": ["bun"],
-  "packages": ["npm:pi-anthropic-oauth@0.3.1"]
+  "packages": []
 }
