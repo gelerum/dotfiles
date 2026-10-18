@@ -63,6 +63,7 @@ function mapStopReason(reason: string | null | undefined): StopReason {
     case "stop_sequence":
       return "stop";
     case "max_tokens":
+    case "model_context_window_exceeded":
       return "length";
     case "tool_use":
       return "toolUse";
@@ -85,7 +86,15 @@ export function applyMessageDelta(
   stopReason: string | null | undefined,
   usage: MessageDeltaUsage | undefined,
 ): void {
-  if (stopReason != null) output.stopReason = mapStopReason(stopReason);
+  if (stopReason != null) {
+    output.stopReason = mapStopReason(stopReason);
+    if (output.stopReason === "error") {
+      output.errorMessage =
+        stopReason === "refusal"
+          ? "The model refused to respond (stop_reason: refusal)."
+          : `Unrecognized stop reason from the API: ${stopReason}.`;
+    }
+  }
 
   if (usage) {
     if (usage.input_tokens != null) output.usage.input = usage.input_tokens;
