@@ -15,6 +15,10 @@
  * - сессии субагентов сохраняются в ~/.pi/agent/subagents/<id сессии родителя>/ (не мешают
  *   /resume), старше KEEP_DAYS удаляются. /subagents - открыть сессию субагента в этом окне
  *   (можно продолжить с ним разговор), оттуда /subagents - назад к родителю
+ * - background: true - инструмент сразу возвращает управление, разговор продолжается; ход
+ *   работы - в виджете над редактором, ответ приходит сообщением subagent-result
+ *   (sendMessage с triggerTurn: агент занят - после его хода, свободен - новый ход).
+ *   /subagents-stop - остановить фоновые задачи; при выходе из сессии они прерываются
  */
 
 import { spawn } from "node:child_process";
@@ -382,7 +386,7 @@ async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T, i: numb
 
 function usageLine(results: Result[]): string {
 	const u = results.reduce((s, r) => {
-		for (const k of Object.keys(s) as (keyof Usage)[]) s[k] += r.usage[k];
+		for (const k of ["input", "output", "cacheRead", "cacheWrite", "cost", "turns"] as const) s[k] += r.usage[k];
 		return s;
 	}, emptyUsage());
 	return `${u.turns} turns, ↑${u.input} ↓${u.output} R${u.cacheRead} W${u.cacheWrite} tokens${u.cost ? `, $${u.cost.toFixed(4)}` : ""}`;
@@ -413,6 +417,52 @@ function toolUsage(results: Result[]) {
 
 function render(r: Result): string {
 	return r.ok ? cap(r.output || "(no output)") : `FAILED: ${r.error}${r.output ? `\n\n${cap(r.output)}` : ""}`;
+}
+
+// Прогон всех шагов режима; live меняется по ходу
+async function runMode(
+	mode: NonNullable<Details["mode"]>,
+	live: Result[],
+	agents: Agent[],
+	defaults: Defaults,
+	signal: AbortSignal | undefined,
+	changed: () => void,
+): Promise<{ text: string; isError: boolean }> {
+	if (mode === "chain") {
+		let previous = "";
+		for (const [i, r] of live.entries()) {
+			r.task = r.task.replaceAll("{previous}", previous);
+			await runAgent(agents, r, defaults, signal, changed);
+			if (!r.ok) {
+				for (const rest of live.slice(i + 1)) rest.status = "failed";
+				return { text: `Chain stopped at step ${i + 1} (${r.agent}): ${render(r)}\n\n(${usageLine(live)})`, isError: true };
+			}
+			previous = r.output;
+		}
+		return { text: `${render(live.at(-1)!)}\n\n(${usageLine(live)})`, isError: false };
+	}
+	if (mode === "parallel") {
+		await mapLimited(live, MAX_CONCURRENCY, (r) => runAgent(agents, r, defaults, signal, changed));
+		const ok = live.filter((r) => r.ok).length;
+		const text = live.map((r, i) => `### ${i + 1}. [${r.agent}] ${r.ok ? "completed" : "failed"}\n\n${render(r)}`).join("\n\n---\n\n");
+		return { text: `Parallel: ${ok}/${live.length} succeeded\n\n${text}\n\n(${usageLine(live)})`, isError: ok === 0 };
+	}
+	const r = await runAgent(agents, live[0], defaults, signal, changed);
+	return { text: `${render(r)}\n\n(${usageLine([r])})`, isError: !r.ok };
+}
+
+// --- фоновые задачи
+
+interface Job {
+	id: number;
+	mode: NonNullable<Details["mode"]>;
+	live: Result[];
+	controller: AbortController;
+}
+
+interface BgDetails extends Details {
+	job?: number;
+	background?: "started" | "finished";
 }
 
 // --- отображение в TUI
@@ -466,7 +516,54 @@ const Step = Type.Object({
 export default function (pi: ExtensionAPI) {
 	if (process.env.PI_SUBAGENT === "1") return;
 
-	pi.on("session_start", async () => prune());
+	const jobs = new Map<number, Job>();
+	let nextJob = 1;
+	let uiCtx: { hasUI: boolean; ui: any } | undefined;
+
+	const updateWidget = () => {
+		if (!uiCtx?.hasUI) return;
+		if (!jobs.size) return uiCtx.ui.setWidget("subagent-jobs", undefined);
+		const theme = uiCtx.ui.theme;
+		const lines: string[] = [];
+		for (const job of jobs.values()) {
+			lines.push(theme.fg("muted", `subagent job #${job.id} (${job.mode}) · /subagents-stop`));
+			for (const r of job.live) lines.push(...renderAgent(r, theme, false, job.live.length > 1).slice(0, 1 + 2));
+		}
+		uiCtx.ui.setWidget("subagent-jobs", lines);
+	};
+	let widgetTimer: ReturnType<typeof setTimeout> | undefined;
+	const scheduleWidget = () => {
+		if (!widgetTimer)
+			widgetTimer = setTimeout(() => {
+				widgetTimer = undefined;
+				updateWidget();
+			}, 300);
+	};
+
+	pi.on("session_start", async (_e, ctx) => {
+		uiCtx = ctx;
+		prune();
+	});
+	pi.on("session_shutdown", async () => {
+		for (const job of jobs.values()) job.controller.abort();
+		jobs.clear();
+		if (widgetTimer) clearTimeout(widgetTimer);
+		widgetTimer = undefined;
+		try {
+			uiCtx?.ui.setWidget("subagent-jobs", undefined);
+		} catch {}
+	});
+
+	pi.registerMessageRenderer("subagent-result", (message, { expanded }, theme) => {
+		const d = message.details as BgDetails | undefined;
+		const lines = [theme.fg("muted", `subagent job #${d?.job ?? "?"} finished`)];
+		if (d?.results?.length) {
+			lines.push(...d.results.flatMap((r) => renderAgent(r, theme, expanded, d.mode !== "single")));
+			if (!expanded) lines.push(theme.fg("dim", "  ctrl+o: full log · /subagents: open session"));
+			if (d.results.length > 1) lines.push(theme.fg("muted", `  ${usageLine(d.results)}`));
+		}
+		return new Text(lines.join("\n"), 0, 0);
+	});
 
 	const userAgents = loadAgents(path.join(getAgentDir(), "agents"), "user");
 	pi.registerTool({
@@ -475,6 +572,9 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Delegate a task to a subagent: a separate pi process with its own context that returns only its final answer. " +
 			"Use it for exploration or research that would flood your context, and to run independent tasks in parallel. " +
+			"With background: true the call returns at once and the answer arrives later as a subagent-result message: " +
+			"use it for long tasks whose result you don't need right now, then keep working or talking with the user; " +
+			"don't wait for, poll or guess the result. " +
 			"The subagent has not seen this conversation: give it a self-contained task with all needed context. " +
 			"Modes (exactly one): single {agent, task}; parallel {tasks: [{agent, task}]}, up to " +
 			`${MAX_PARALLEL_TASKS}; chain {chain: [{agent, task}]} where {previous} is the previous step's output. ` +
@@ -486,9 +586,13 @@ export default function (pi: ExtensionAPI) {
 			task: Type.Optional(Type.String({ description: "Single mode: task" })),
 			tasks: Type.Optional(Type.Array(Step, { description: "Parallel mode" })),
 			chain: Type.Optional(Type.Array(Step, { description: "Chain mode" })),
+			background: Type.Optional(
+				Type.Boolean({ description: "Run in background: return immediately, the result arrives later as a message. Default false" }),
+			),
 		}),
 
 		async execute(_id, params, signal, onUpdate, ctx) {
+			uiCtx = ctx;
 			const agents = discoverAgents(ctx.cwd, ctx.isProjectTrusted());
 			const parentSession = ctx.sessionManager.getSessionFile();
 			const defaults: Defaults = {
@@ -513,6 +617,40 @@ export default function (pi: ExtensionAPI) {
 			}
 			const live = steps.map((s) => newResult(s.agent, s.task));
 
+			// В print/json pi выходит после хода и фоновый ответ потерялся бы: там ждём
+			if (params.background && (ctx.mode === "tui" || ctx.mode === "rpc")) {
+				const job: Job = { id: nextJob++, mode, live, controller: new AbortController() };
+				jobs.set(job.id, job);
+				updateWidget();
+				void runMode(mode, live, agents, defaults, job.controller.signal, scheduleWidget)
+					.catch((err) => ({ text: `FAILED: ${err instanceof Error ? err.message : String(err)}`, isError: true }))
+					.then(({ text, isError }) => {
+						// Прервана при выходе из сессии - доставлять некуда
+						if (!jobs.delete(job.id)) return;
+						updateWidget();
+						const status = job.controller.signal.aborted ? "was stopped" : isError ? "failed" : "finished";
+						pi.sendMessage(
+							{
+								customType: "subagent-result",
+								content: `Background subagent job #${job.id} (${mode}: ${live.map((r) => r.agent).join(", ")}) ${status}:\n\n${text}`,
+								display: true,
+								details: { mode, results: live, job: job.id, background: "finished" } as BgDetails,
+							},
+							// Остановленная вручную не будит агента
+							{ triggerTurn: !job.controller.signal.aborted, deliverAs: "followUp" },
+						);
+					});
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Started background job #${job.id}. The result will arrive later as a separate message; continue without waiting for it.`,
+						},
+					],
+					details: { mode, job: job.id, background: "started" } as BgDetails,
+				};
+			}
+
 			// Обновления не чаще раза в 150 мс: события субагентов идут пачками
 			let timer: ReturnType<typeof setTimeout> | undefined;
 			const flush = () => {
@@ -523,38 +661,14 @@ export default function (pi: ExtensionAPI) {
 			const changed = () => {
 				if (!timer) timer = setTimeout(flush, 150);
 			};
-			const done = (content: string, isError: boolean) => {
-				if (timer) clearTimeout(timer);
-				return { content: [{ type: "text" as const, text: content }], details: { mode, results: live } as Details, isError, usage: toolUsage(live) };
-			};
-
-			if (mode === "chain") {
-				let previous = "";
-				for (const [i, r] of live.entries()) {
-					r.task = r.task.replaceAll("{previous}", previous);
-					await runAgent(agents, r, defaults, signal, changed);
-					if (!r.ok) {
-						for (const rest of live.slice(i + 1)) rest.status = "failed";
-						return done(`Chain stopped at step ${i + 1} (${r.agent}): ${render(r)}\n\n(${usageLine(live)})`, true);
-					}
-					previous = r.output;
-				}
-				return done(`${render(live.at(-1)!)}\n\n(${usageLine(live)})`, false);
-			}
-
-			if (mode === "parallel") {
-				await mapLimited(live, MAX_CONCURRENCY, (r) => runAgent(agents, r, defaults, signal, changed));
-				const ok = live.filter((r) => r.ok).length;
-				const text = live.map((r, i) => `### ${i + 1}. [${r.agent}] ${r.ok ? "completed" : "failed"}\n\n${render(r)}`).join("\n\n---\n\n");
-				return done(`Parallel: ${ok}/${live.length} succeeded\n\n${text}\n\n(${usageLine(live)})`, ok === 0);
-			}
-
-			const r = await runAgent(agents, live[0], defaults, signal, changed);
-			return done(`${render(r)}\n\n(${usageLine([r])})`, !r.ok);
+			const { text, isError } = await runMode(mode, live, agents, defaults, signal, changed);
+			if (timer) clearTimeout(timer);
+			return { content: [{ type: "text" as const, text }], details: { mode, results: live } as Details, isError, usage: toolUsage(live) };
 		},
 
 		renderCall(args, theme) {
 			let text = theme.fg("toolTitle", theme.bold("subagent "));
+			if (args.background) text += theme.fg("warning", "[bg] ");
 			if (args.chain?.length) text += theme.fg("accent", `chain ${args.chain.map((s: any) => s.agent).join(" → ")}`);
 			else if (args.tasks?.length) text += theme.fg("accent", `parallel ×${args.tasks.length}`);
 			else text += `${theme.fg("accent", args.agent ?? "")} ${theme.fg("dim", oneLine(args.task ?? "", 90))}`;
@@ -562,7 +676,8 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderResult(result, { expanded }, theme) {
-			const d = result.details as Details | undefined;
+			const d = result.details as BgDetails | undefined;
+			if (d?.background === "started") return new Text(theme.fg("muted", `  started in background as job #${d.job}`), 0, 0);
 			if (!d?.results?.length) {
 				const t = result.content?.find((c: any) => c.type === "text") as { text: string } | undefined;
 				return new Text(theme.fg("error", t?.text ?? ""), 0, 0);
@@ -573,6 +688,18 @@ export default function (pi: ExtensionAPI) {
 			if (finished && !expanded) lines.push(theme.fg("dim", "  ctrl+o: full log · /subagents: open session"));
 			if (finished && d.results.length > 1) lines.push(theme.fg("muted", `  ${usageLine(d.results)}`));
 			return new Text(lines.join("\n"), 0, 0);
+		},
+	});
+
+	pi.registerCommand("subagents-stop", {
+		description: "Stop running background subagent jobs",
+		handler: async (_args, ctx) => {
+			if (!jobs.size) return ctx.ui.notify("No background subagent jobs", "info");
+			const all = "all jobs";
+			const labels = [...jobs.values()].map((j) => `#${j.id} ${j.mode}: ${j.live.map((r) => r.agent).join(", ")} - ${oneLine(j.live[0].task, 60)}`);
+			const choice = await ctx.ui.select("Stop background job:", jobs.size > 1 ? [all, ...labels] : labels);
+			if (!choice) return;
+			for (const [i, job] of [...jobs.values()].entries()) if (choice === all || choice === labels[i]) job.controller.abort();
 		},
 	});
 
