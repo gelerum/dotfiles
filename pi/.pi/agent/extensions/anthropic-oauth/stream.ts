@@ -23,6 +23,7 @@ import {
   type IndexedBlock,
 } from "./convert.js";
 import { buildAnthropicSystemPrompt } from "./prompt.js";
+import { getCacheControl } from "./cache.js";
 
 const REQUIRED_BETAS = [
   "claude-code-20250219",
@@ -77,6 +78,7 @@ type MessageDeltaUsage = {
   output_tokens?: number | null;
   cache_read_input_tokens?: number | null;
   cache_creation_input_tokens?: number | null;
+  cache_creation?: { ephemeral_1h_input_tokens?: number | null } | null;
   output_tokens_details?: { thinking_tokens?: number | null };
 };
 
@@ -104,6 +106,9 @@ export function applyMessageDelta(
     }
     if (usage.cache_creation_input_tokens != null) {
       output.usage.cacheWrite = usage.cache_creation_input_tokens;
+    }
+    if (usage.cache_creation?.ephemeral_1h_input_tokens != null) {
+      output.usage.cacheWrite1h = usage.cache_creation.ephemeral_1h_input_tokens;
     }
     const thinkingTokens = usage.output_tokens_details?.thinking_tokens;
     if (thinkingTokens != null) output.usage.reasoning = thinkingTokens;
@@ -220,14 +225,15 @@ export function streamAnthropicOAuth(
       const maxTokens =
         options?.maxTokens || Math.floor(model.maxTokens / 3);
 
+      const cacheControl = getCacheControl(options, model.compat?.supportsLongCacheRetention ?? true);
       const params: MessageCreateParamsStreaming = {
         model: model.id,
-        messages: convertPiMessagesToAnthropic(transcript.messages, isOAuth, model),
+        messages: convertPiMessagesToAnthropic(transcript.messages, isOAuth, model, cacheControl),
         max_tokens: maxTokens,
         stream: true,
       };
 
-      const system = buildAnthropicSystemPrompt(systemPrompt, isOAuth);
+      const system = buildAnthropicSystemPrompt(systemPrompt, isOAuth, cacheControl);
       if (system) params.system = system as never;
       if (tools.length)
         params.tools = convertPiToolsToAnthropic(tools, isOAuth);
@@ -305,6 +311,8 @@ export function streamAnthropicOAuth(
           output.usage.cacheWrite =
             (event.message.usage as { cache_creation_input_tokens?: number })
               .cache_creation_input_tokens || 0;
+          output.usage.cacheWrite1h =
+            (event.message.usage as MessageDeltaUsage).cache_creation?.ephemeral_1h_input_tokens || 0;
           output.usage.totalTokens =
             output.usage.input +
             output.usage.output +

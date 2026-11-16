@@ -7,7 +7,9 @@
  * - запись в память с секретами или вредными инструкциями блокируется
  * - индексы вместе не больше 200 строк: запись сверх лимита блокируется, а не обрезается
  * - при заполнении контекста на 75% модель получает напоминание сохранить важное до сжатия
- * - при выходе из длинной сессии один вызов модели дописывает пропущенное.
+ * - при выходе один вызов модели обрабатывает до 20k новых символов истории;
+ *   успешная позиция сохраняется в ветке сессии, ошибки не сдвигают её
+ * - /memory-reflections показывает отдельный учёт usage и последний результат
  *   PI_MEMORY_REFLECT=0 - выключить, PI_MEMORY_REFLECT_MODEL=provider/id - другая модель
  */
 
@@ -25,7 +27,9 @@ const MAX_LINES = 200;
 const MAX_BYTES = 25_000;
 const NUDGE_PERCENT = 75;
 const REFLECT_MIN_USER_MESSAGES = 4;
-const REFLECT_MAX_CHARS = 80_000;
+const REFLECT_MAX_CHARS = 20_000;
+const REFLECT_MAX_TOKENS = 1500;
+const REFLECT_ENTRY = "memory-reflection";
 const REFLECT_TIMEOUT_MS = 60_000;
 const DAY_MS = 86_400_000;
 
@@ -189,10 +193,10 @@ function parseMemories(text: string): Memory[] {
 	try {
 		data = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
 	} catch {
-		return [];
+		throw new Error("Reflection returned invalid JSON");
 	}
-	if (!Array.isArray(data?.memories)) return [];
-	return data.memories.filter(
+	if (!Array.isArray(data?.memories)) throw new Error("Reflection response has no memories array");
+	const memories = data.memories.filter(
 		(m: any) =>
 			(m?.scope === "global" || m?.scope === "project") &&
 			typeof m.file === "string" &&
@@ -203,10 +207,39 @@ function parseMemories(text: string): Memory[] {
 			m.body.trim() &&
 			!m.body.includes("\n---"),
 	);
+	if (memories.length !== data.memories.length) throw new Error("Reflection returned invalid memory fields");
+	return memories;
+}
+
+interface ReflectCursor { entryId: string; offset: number }
+
+// Checkpoints belong to the current branch. Partial messages resume at an offset
+// rather than silently dropping text that did not fit the request budget.
+function reflectionBatch(branch: any[]) {
+	const messages = branch.filter((e) => e.type === "message");
+	const checkpoints = branch.filter((e) => e.type === "custom" && e.customType === REFLECT_ENTRY && e.data?.status === "ok");
+	const cursor: ReflectCursor | undefined = checkpoints.at(-1)?.data?.cursor;
+	const index = cursor ? messages.findIndex((e) => e.id === cursor.entryId) : -1;
+	let offset = index >= 0 ? cursor!.offset : 0;
+	let text = "";
+	let next: ReflectCursor | undefined;
+	let pending = false;
+	for (const entry of messages.slice(Math.max(index, 0))) {
+		const serialized = serializeConversation(convertToLlm([entry.message]));
+		const remaining = serialized.slice(offset);
+		const room = REFLECT_MAX_CHARS - text.length;
+		if (remaining.length && room <= 2) { pending = true; break; }
+		const part = remaining.slice(0, Math.max(0, room - (text ? 2 : 0)));
+		if (part) text += (text ? "\n\n" : "") + part;
+		next = { entryId: entry.id, offset: offset + part.length };
+		if (part.length < remaining.length) { pending = true; break; }
+		offset = 0;
+	}
+	return { text, cursor: next, pending, initial: index < 0, userMessages: messages.filter((e) => e.message.role === "user").length };
 }
 
 function reflectPrompt(dir: string, conversation: string): string {
-	return `You maintain a coding agent's persistent memory. The session below just ended. Extract only facts worth remembering in future sessions that are NOT already in the memory indexes: user corrections and confirmed approaches (feedback), facts about the user (user), non-obvious project context, decisions and constraints with absolute dates (project), pointers to external resources (reference). Skip anything derivable from the code or git history, anything only relevant to this session, and anything already covered. Most sessions need nothing: an empty list is the expected answer.
+	return `You maintain a coding agent's persistent memory. The session just ended; below is a new transcript fragment that may start or end inside a message. Extract only facts explicitly supported by this fragment and worth remembering in future sessions that are NOT already in the memory indexes: user corrections and confirmed approaches (feedback), facts about the user (user), non-obvious project context, decisions and constraints with absolute dates (project), pointers to external resources (reference). Skip anything derivable from the code or git history, anything only relevant to this session, and anything already covered. Most fragments need nothing: an empty list is the expected answer. Return at most three concise memories and complete the JSON within 1500 output tokens.
 
 Scope "global" is only for user/feedback facts that apply to every project; everything else is "project". Never include secrets or confidential project details in global memory. To update an existing memory, reuse its file name.
 
@@ -225,6 +258,23 @@ ${conversation}
 }
 
 export default function (pi: ExtensionAPI) {
+	// The devenv launcher sets this only when external memory is configured.
+	// Keep the files and default behavior intact for rollback/native Pi.
+	if (process.env.PI_MEMORY === "0") return;
+	pi.registerCommand("memory-reflections", {
+		description: "Show reflection usage and the latest result for this session branch",
+		handler: async (_args, ctx) => {
+			const records = ctx.sessionManager.getBranch()
+				.filter((e: any) => e.type === "custom" && e.customType === REFLECT_ENTRY)
+				.map((e: any) => e.data);
+			const tokens = records.reduce((sum: number, r: any) => sum + (r.usage?.totalTokens ?? 0), 0);
+			const cost = records.reduce((sum: number, r: any) => sum + (r.usage?.cost?.total ?? 0), 0);
+			const last = records.at(-1);
+			ctx.ui.notify(last
+				? `memory: ${records.length} reflections, ${tokens} tokens, estimated $${cost.toFixed(4)}; last ${last.provider}/${last.model}: ${last.status}${last.error ? ` (${last.error})` : ""}${last.pending ? "; unprocessed history pending" : ""}`
+				: "memory: no reflection records in this branch", "info");
+		},
+	});
 	pi.on("before_agent_start", async (event, ctx) => {
 		event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, memory: instructions(memoryDir(ctx.cwd)) };
 	});
@@ -274,34 +324,43 @@ export default function (pi: ExtensionAPI) {
 	// Рефлексия при выходе: только quit, не /reload, /new, /resume, /fork
 	pi.on("session_shutdown", async (event, ctx) => {
 		if (event.reason !== "quit" || process.env.PI_MEMORY_REFLECT === "0") return;
-		const override = process.env.PI_MEMORY_REFLECT_MODEL?.split("/");
-		const model = override?.length === 2 ? ctx.modelRegistry.find(override[0], override[1]) : ctx.model;
-		if (!model) return;
-
-		const messages = ctx.sessionManager
-			.getBranch()
-			.filter((e: any) => e.type === "message")
-			.map((e: any) => e.message);
-		if (messages.filter((m: any) => m.role === "user").length < REFLECT_MIN_USER_MESSAGES) return;
-		const conversation = serializeConversation(convertToLlm(messages)).slice(-REFLECT_MAX_CHARS);
+		const batch = reflectionBatch(ctx.sessionManager.getBranch());
+		if (!batch.text.trim() || (batch.initial && batch.userMessages < REFLECT_MIN_USER_MESSAGES)) return;
 		const dir = memoryDir(ctx.cwd);
-
+		let usage: unknown;
+		let provider = ctx.model?.provider;
+		let modelId = ctx.model?.id;
+		const started = Date.now();
 		try {
+			const override = process.env.PI_MEMORY_REFLECT_MODEL;
+			const slash = override?.indexOf("/") ?? -1;
+			if (override && slash < 1) throw new Error("PI_MEMORY_REFLECT_MODEL must be provider/model");
+			if (override) { provider = override.slice(0, slash); modelId = override.slice(slash + 1); }
+			const model = override ? ctx.modelRegistry.find(provider!, modelId!) : ctx.model;
+			if (!model) throw new Error("Reflection model is not registered");
 			const response = await ctx.modelRegistry.complete(
 				model,
-				{ messages: [{ role: "user", content: [{ type: "text", text: reflectPrompt(dir, conversation) }], timestamp: Date.now() }] },
-				{ signal: AbortSignal.timeout(REFLECT_TIMEOUT_MS) },
+				{ messages: [{ role: "user", content: [{ type: "text", text: reflectPrompt(dir, batch.text) }], timestamp: Date.now() }] },
+				{ maxTokens: REFLECT_MAX_TOKENS, signal: AbortSignal.timeout(REFLECT_TIMEOUT_MS) },
 			);
+			usage = response.usage;
+			if (response.stopReason !== "stop") throw new Error(`Reflection did not finish (${response.stopReason})`);
 			const text = response.content
 				.filter((b) => b.type === "text")
 				.map((b) => (b as { text: string }).text)
 				.join("");
-			const saved = parseMemories(text).filter(
-				(m) => !forbidden([m.title, m.hook, m.description, m.body].join("\n")) && save(m, dir),
-			);
-			if (saved.length) ctx.ui.notify(`memory: saved ${saved.map((m) => m.file).join(", ")}`, "info");
-		} catch {
-			// Таймаут или ошибка провайдера при выходе - просто без рефлексии
+			const memories = parseMemories(text);
+			for (const m of memories) {
+				if (forbidden([m.title, m.hook, m.description, m.body].join("\n"))) throw new Error("Reflection memory rejected by content guard");
+				if (!save(m, dir)) throw new Error("Reflection memory index exceeds its budget");
+			}
+			pi.appendEntry(REFLECT_ENTRY, { status: "ok", provider, model: modelId, usage, durationMs: Date.now() - started, cursor: batch.cursor, pending: batch.pending, saved: memories.map((m) => m.file) });
+			ctx.ui.notify(`memory: ${provider}/${modelId}, saved ${memories.length}, tokens ${response.usage.totalTokens}${batch.pending ? "; more history pending for next exit" : ""}`, "info");
+		} catch (error) {
+			const raw = error instanceof Error ? error.message : String(error);
+			const reason = forbidden(raw) ? "Reflection failed (sensitive error details omitted)" : raw.slice(0, 300);
+			pi.appendEntry(REFLECT_ENTRY, { status: "error", provider, model: modelId, usage, durationMs: Date.now() - started, error: reason });
+			ctx.ui.notify(`memory: reflection failed: ${reason}; checkpoint unchanged`, "warning");
 		}
 	});
 }

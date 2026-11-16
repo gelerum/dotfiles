@@ -1,6 +1,7 @@
 ---
+thinking: medium
 name: scout
-description: Fast read-only codebase exploration; returns concise findings with file:line for an agent that has not seen the code
+description: Focused read-only investigation of code paths, dependencies, and behavior using the parent model; returns evidence with file:line
 tools: read, grep, find, ls, bash
 ---
 

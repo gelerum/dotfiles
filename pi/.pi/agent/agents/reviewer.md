@@ -1,4 +1,5 @@
 ---
+thinking: medium
 name: reviewer
 description: Read-only review of a diff or recent changes for bugs; returns BLOCKER/RISK/NIT findings with file:line
 tools: read, grep, find, ls, bash

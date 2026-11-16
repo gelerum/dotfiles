@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getClaudeCodeVersion } from "./version.js";
+import type { CacheControl } from "./cache.js";
 
 const CLAUDE_CODE_IDENTITY =
   "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
@@ -62,6 +63,7 @@ export function sanitizeSurrogates(text: string): string {
 export function buildAnthropicSystemPrompt(
   systemPrompt: string | undefined,
   isOAuth: boolean,
+  cacheControl: CacheControl | null = { type: "ephemeral" },
 ): MessageContentBlock[] | undefined {
   const blocks: MessageContentBlock[] = [];
 
@@ -77,7 +79,7 @@ export function buildAnthropicSystemPrompt(
     blocks.push({
       type: "text",
       text: sanitized,
-      cache_control: { type: "ephemeral" },
+      ...(cacheControl && { cache_control: cacheControl }),
     });
   }
 

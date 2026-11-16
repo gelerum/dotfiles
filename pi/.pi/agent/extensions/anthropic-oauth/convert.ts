@@ -22,6 +22,7 @@ import type {
   ToolResultMessage,
 } from "@earendil-works/pi-ai";
 import { sanitizeSurrogates } from "./prompt.js";
+import type { CacheControl } from "./cache.js";
 
 export type IndexedBlock =
   | (TextContent & { index: number })
@@ -72,6 +73,7 @@ export function convertPiMessagesToAnthropic(
   messages: Message[],
   isOAuth: boolean,
   model: Pick<Model<Api>, "provider" | "api" | "id">,
+  cacheControl: CacheControl | null = { type: "ephemeral" },
 ): MessageParam[] {
   const params: MessageParam[] = [];
   const toolIdMap = new Map<string, string>();
@@ -252,22 +254,22 @@ export function convertPiMessagesToAnthropic(
   // Anthropic prompt caching requires an explicit breakpoint. Plain-text user
   // turns must be promoted to a block so there is somewhere to attach it.
   const last = params.at(-1);
-  if (last?.role === "user") {
+  if (cacheControl && last?.role === "user") {
     if (typeof last.content === "string") {
       if (last.content) {
         last.content = [
           {
             type: "text",
             text: last.content,
-            cache_control: { type: "ephemeral" },
+            cache_control: cacheControl,
           },
         ];
       }
     } else if (last.content.length > 0) {
       const lastBlock = last.content[last.content.length - 1] as {
-        cache_control?: { type: string };
+        cache_control?: CacheControl;
       };
-      lastBlock.cache_control = { type: "ephemeral" };
+      lastBlock.cache_control = cacheControl;
     }
   }
 
