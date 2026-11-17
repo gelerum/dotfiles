@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "context7": {
+      "url": "https://mcp.context7.com/mcp",
+      "exposure": "deferred",
+      "description": "Official Context7: documentation and API examples for external libraries; request the project's exact version. Public endpoint works without a key, with rate limits."
+    },
+    "playwright": {
+      "command": "/opt/pi-tools/node_modules/.bin/playwright-mcp",
+      "args": ["--headless", "--isolated", "--browser", "chromium"],
+      "env": { "PLAYWRIGHT_BROWSERS_PATH": "/opt/playwright-browsers" },
+      "exposure": "deferred",
+      "description": "Official Playwright MCP: inspect and exercise web interfaces in a headless, isolated Chromium browser. No personal browser profile or saved credentials."
+    },
+    "serena": {
+      "command": "/opt/serena/.venv/bin/serena",
+      "args": [
+        "start-mcp-server", "--project-from-cwd",
+        "--context", "/opt/pi-tools/serena-context.yml",
+        "--agent-interface", "tools",
+        "--mode", "editing", "--mode", "interactive", "--mode", "no-memories",
+        "--enable-web-dashboard", "false", "--open-web-dashboard", "false"
+      ],
+      "exposure": "deferred",
+      "timeout": 120,
+      "description": "Serena semantic code navigation and symbol-level refactoring for the current project. Memory, onboarding, shell and REPL are disabled; use Hindsight for past decisions."
+    }
+  }
+}

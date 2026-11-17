@@ -66,6 +66,7 @@ function findBin(root: string, name: string): string | undefined {
 
 const ext = (file: string) => path.extname(file).toLowerCase();
 const isPython = (f: string) => ext(f) === ".py" || ext(f) === ".pyi";
+const isNix = (f: string) => ext(f) === ".nix";
 const isTs = (f: string) => [".ts", ".tsx", ".mts", ".cts"].includes(ext(f));
 const isJs = (f: string) => isTs(f) || [".js", ".jsx", ".mjs", ".cjs"].includes(ext(f));
 const isShell = (f: string) => [".sh", ".bash"].includes(ext(f)) || /^#!.*\b(ba)?sh\b/.test(read(f).split("\n", 1)[0]);
@@ -89,6 +90,35 @@ interface Linter {
 }
 
 const LINTERS: Linter[] = [
+	{
+		name: "statix",
+		applies: (_r, f) => isNix(f),
+		run: async (r, f, exec) => {
+			// errfmt is stable and available even in builds without the JSON feature.
+			const out = await exec("statix", ["check", "--format", "errfmt", f], LINT_TIMEOUT_MS);
+			// Statix 0.5.8 can report a malformed statix.toml only on stderr,
+			// even with exit status 0. Never mistake that for a clean check.
+			if (out.stderr.trim() || out.code > 1) throw new Error("statix check failed");
+			return parseLines(out.stdout, /^(.+)>(\d+):\d+:([WEI]:\d+:.*)$/, r);
+		},
+	},
+	{
+		name: "deadnix",
+		applies: (_r, f) => isNix(f),
+		run: async (r, f, exec) => {
+			// No --edit: unused module arguments can be intentional. Honour upstream
+			// deadnix: skip pragmas; report findings without rewriting the source.
+			const out = await exec("deadnix", ["--output-format", "json", f], LINT_TIMEOUT_MS);
+			const diags: Diag[] = [];
+			for (const line of out.stdout.split("\n").filter((s) => s.trim())) {
+				const report = JSON.parse(line);
+				for (const d of report.results ?? []) {
+					diags.push({ file: path.resolve(r, report.file), line: d.line, message: d.message });
+				}
+			}
+			return diags;
+		},
+	},
 	{
 		name: "ruff",
 		applies: (r, f) => isPython(f) && config.ruff(r),
@@ -148,8 +178,14 @@ export default function (pi: ExtensionAPI) {
 		const reports: string[] = [];
 		for (const linter of LINTERS) {
 			if (!linter.applies(root, file)) continue;
-			const diags = (await linter.run(root, file, exec(root))).filter((d) => d.file === file);
-			if (diags.length) reports.push(`${linter.name}:\n${format(diags, root)}`);
+			try {
+				const diags = (await linter.run(root, file, exec(root))).filter((d) => d.file === file);
+				if (diags.length) reports.push(`${linter.name}:\n${format(diags, root)}`);
+			} catch {
+				// A broken/malformed linter must not hide the successful edit or stop
+				// the other checks. Do not include raw stderr (it may contain secrets).
+				reports.push(`${linter.name}: check failed; run the linter manually for details`);
+			}
 		}
 		if (!reports.length) return;
 		return { content: [...event.content, { type: "text", text: `\n\nLint errors in this file, fix them:\n${reports.join("\n\n")}` }] };

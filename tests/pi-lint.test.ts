@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
 import * as fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import * as os from "node:os";
 import * as path from "node:path";
 import extension from "../pi/.pi/agent/extensions/lint.ts";
@@ -11,7 +12,7 @@ let ctx: any;
 beforeEach(() => {
 	root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lint-test-"));
 	fs.mkdirSync(path.join(root, ".venv/bin"), { recursive: true });
-	for (const name of ["ruff", "eslint"]) {
+	for (const name of ["ruff", "eslint", "statix", "deadnix"]) {
 		const bin = path.join(root, ".venv/bin", name);
 		fs.writeFileSync(bin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
 	}
@@ -62,6 +63,108 @@ test("eslint reports errors only and explicitly disables fixes", async () => {
 	expect(exec.mock.calls[0][1]).toEqual(["--format", "json", "--no-fix", file]);
 	expect(result.content[1].text).toContain("bad code (test-rule)");
 	expect(result.content[1].text).not.toContain("warning");
+});
+
+test("Nix lint runs both tools without a config and never rewrites the file", async () => {
+	for (const name of ["ruff.toml", "eslint.config.js"]) fs.unlinkSync(path.join(root, name));
+	const file = path.join(root, "module.nix");
+	const source = "{ unused }: let x = 1; in {}\n";
+	fs.writeFileSync(file, source);
+	exec.mockImplementation(async (bin: string) => ({
+		stdout: bin.endsWith("statix")
+			? `${file}>1:3:W:20:Unused pattern\n${root}/other.nix>1:1:W:20:Other file\n`
+			: JSON.stringify({ file, results: [{ line: 1, column: 17, message: "Unused let binding: x" }] }) + "\n",
+		stderr: "", code: 0,
+	}));
+	const result = await handlers.tool_result(event(file), ctx);
+	expect(exec.mock.calls.map((call) => call[1])).toEqual([
+		["check", "--format", "errfmt", file],
+		["--output-format", "json", file],
+	]);
+	expect(result.content[1].text).toContain("statix:\nmodule.nix:1: W:20:Unused pattern");
+	expect(result.content[1].text).toContain("deadnix:\nmodule.nix:1: Unused let binding: x");
+	expect(result.content[1].text).not.toContain("other.nix");
+	expect(fs.readFileSync(file, "utf8")).toBe(source);
+});
+
+test("clean Nix files do not change tool results", async () => {
+	const file = path.join(root, "clean.nix");
+	fs.writeFileSync(file, "{}\n");
+	expect(await handlers.tool_result(event(file, "write"), ctx)).toBeUndefined();
+	expect(exec).toHaveBeenCalledTimes(2);
+});
+
+test("a broken Nix linter does not hide the edit or stop other checks", async () => {
+	const file = path.join(root, "bad.nix");
+	fs.writeFileSync(file, "{}\n");
+	exec.mockImplementation(async (bin: string) => {
+		if (bin.endsWith("statix")) throw new Error("private stderr");
+		return { stdout: JSON.stringify({ file, results: [{ line: 1, message: "Unused binding" }] }), stderr: "", code: 0 };
+	});
+	const result = await handlers.tool_result(event(file), ctx);
+	expect(result.content[0].text).toBe("Edit applied");
+	expect(result.content[1].text).toContain("statix: check failed");
+	expect(result.content[1].text).toContain("deadnix:");
+	expect(result.content[1].text).not.toContain("private stderr");
+});
+
+test("statix stderr with status zero is a failed check, not a clean file", async () => {
+	const file = path.join(root, "a.nix");
+	fs.writeFileSync(file, "{}\n");
+	exec.mockImplementation(async (bin: string) => ({
+		stdout: "", stderr: bin.endsWith("statix") ? "private config error" : "", code: 0,
+	}));
+	const result = await handlers.tool_result(event(file), ctx);
+	expect(result.content[0].text).toBe("Edit applied");
+	expect(result.content[1].text).toContain("statix: check failed");
+	expect(result.content[1].text).not.toContain("private config error");
+	expect(exec).toHaveBeenCalledTimes(2);
+});
+
+test("malformed deadnix output is reported without throwing", async () => {
+	const file = path.join(root, "a.nix");
+	fs.writeFileSync(file, "{}\n");
+	exec.mockImplementation(async (bin: string) => ({ stdout: bin.endsWith("deadnix") ? "not-json" : "", stderr: "", code: 0 }));
+	expect((await handlers.tool_result(event(file), ctx)).content[1].text).toContain("deadnix: check failed");
+});
+
+test("missing Nix binaries are skipped", async () => {
+	for (const name of ["statix", "deadnix"]) fs.unlinkSync(path.join(root, ".venv/bin", name));
+	const oldPath = process.env.PATH;
+	process.env.PATH = "";
+	try {
+		expect(await handlers.tool_result(event(path.join(root, "a.nix")), ctx)).toBeUndefined();
+		expect(exec).not.toHaveBeenCalled();
+	} finally {
+		process.env.PATH = oldPath;
+	}
+});
+
+const nixIntegration = process.env.STATIX_TEST_BIN && process.env.DEADNIX_TEST_BIN ? test : test.skip;
+nixIntegration("real Nix binaries produce diagnostics through the hook without modifying source", async () => {
+	for (const [name, bin] of [["statix", process.env.STATIX_TEST_BIN!], ["deadnix", process.env.DEADNIX_TEST_BIN!]]) {
+		const target = path.join(root, ".venv/bin", name);
+		fs.unlinkSync(target);
+		fs.symlinkSync(bin, target);
+	}
+	exec.mockImplementation(async (bin: string, args: string[]) => {
+		const out = spawnSync(bin, args, { cwd: root, encoding: "utf8", timeout: 15000 });
+		if (out.error) throw out.error;
+		return { stdout: out.stdout, stderr: out.stderr, code: out.status ?? 1 };
+	});
+	const file = path.join(root, "real.nix");
+	const source = "{ unused }: (true == true)\n";
+	fs.writeFileSync(file, source);
+	const result = await handlers.tool_result(event(file), ctx);
+	expect(result.content[1].text).toContain("statix:");
+	expect(result.content[1].text).toContain("Comparing");
+	expect(result.content[1].text).toContain("deadnix:");
+	expect(result.content[1].text).toContain("Unused lambda pattern");
+	expect(fs.readFileSync(file, "utf8")).toBe(source);
+	fs.writeFileSync(path.join(root, "statix.toml"), "[invalid TOML\n");
+	const invalidConfig = await handlers.tool_result(event(file), ctx);
+	expect(invalidConfig.content[1].text).toContain("statix: check failed");
+	expect(invalidConfig.content[1].text).toContain("deadnix:");
 });
 
 test("failed edits, reads, and files outside the project do not invoke lint", async () => {
