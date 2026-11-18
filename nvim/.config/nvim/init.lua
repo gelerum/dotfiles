@@ -32,3 +32,6 @@ require("lazy").setup("plugins")
 
 -- Load keymaps (after plugins)
 require("keymaps")
+
+-- Включая mappings, созданные lazy.nvim до загрузки langmapper (keys = {...}).
+require("langmapper").automapping({ global = true, buffer = false })

@@ -1,4 +1,24 @@
 return {
+	-- langmap покрывает встроенные команды, но не все многоклавишные mappings.
+	-- Загружаем раньше остальных плагинов: обёртка API добавляет русские aliases
+	-- и для поздних buffer-local mappings (LSP, gitsigns), без xkb-switch/GUI.
+	{
+		"Wansmer/langmapper.nvim",
+		commit = "a7b3e66d1ed624c7ebda6b652993a37797830298",
+		lazy = false,
+		priority = 2000,
+		opts = {
+			use_layouts = { "ru" },
+			ctrl_map_modes = { "n", "v", "x", "o" },
+			disable_hack_modes = { "i", "c", "t" },
+			layouts = {
+				ru = {
+					layout = [[ЁЙЦУКЕНГШЩЗХЪ/ФЫВАПРОЛДЖЭЯЧСМИТЬБЮ,ёйцукенгшщзхъфывапролджэячсмитьбю.]],
+				},
+			},
+		},
+	},
+
 	-- =============================================
 	-- TREESITTER
 	-- =============================================

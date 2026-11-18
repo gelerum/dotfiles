@@ -6,6 +6,19 @@
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
 
+-- Команды и mappings работают на русской ЙЦУКЕН-раскладке без переключения:
+-- р/о/л/д → h/j/k/l, вв → dd и т.д.
+-- Insert mode, поиск и аргументы f/r остаются русскими. Результаты mappings
+-- повторно не переводим (langremap), чтобы не менять вставляемый ими текст.
+local ru = vim.fn.split("ёйцукенгшщзхъфывапролджэячсмитьбюЁЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ", "\\zs")
+local en = vim.fn.split([[`qwertyuiop[]asdfghjkl;'zxcvbnm,.~QWERTYUIOP{}ASDFGHJKL:"ZXCVBNM<>]], "\\zs")
+local langmap = {}
+for i, char in ipairs(ru) do
+	langmap[i] = char .. vim.fn.escape(en[i], [[,;"|\]])
+end
+vim.opt.langmap = table.concat(langmap, ",")
+vim.opt.langremap = false
+
 -- System clipboard
 vim.opt.clipboard = "unnamedplus"
 
