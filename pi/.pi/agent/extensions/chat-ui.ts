@@ -140,19 +140,21 @@ export default function (pi: ExtensionAPI) {
 			renderResult(result, options, theme, ctx) {
 				const row = rowFor(ctx);
 				row.result = result;
-				row.warning = lintFindings(result);
+				const actionable = lintFindings(result);
+				const lintStyle = (result.details as { lintStyle?: string } | undefined)?.lintStyle;
+				row.warning = [actionable, lintStyle].filter(Boolean).join("\n\n") || undefined;
 				row.summary = summary(name, row);
 				if (!compact || options.expanded) {
 					row.output = original?.renderResult?.(result, options, theme, delegate("output", ctx, row))
 						?? new Text(resultText(result), 0, 0);
 					const output = row.output as ReturnType<NonNullable<ToolRenderers["renderResult"]>>;
-					// Built-in edit/write renderers omit successful text content, so
-					// delegation alone would hide diagnostics appended by lint.ts.
-					// Keep their component/state intact and append ALL findings.
-					if (row.warning && original?.renderResult) {
+					// Built-in edit/write renderers omit successful text content;
+					// the text fallback already includes actionable diagnostics.
+					const extraFindings = original?.renderResult ? row.warning : lintStyle;
+					if (extraFindings) {
 						const combined = new Container();
 						combined.addChild(output);
-						combined.addChild(new Text(theme.fg("warning", `Lint findings\n${row.warning}`), 0, 0));
+						combined.addChild(new Text(theme.fg("warning", `Lint findings\n${extraFindings}`), 0, 0));
 						return combined;
 					}
 					return output;

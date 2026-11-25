@@ -52,6 +52,36 @@ test("write diagnostics preserve tool result and exclude other files", async () 
 	expect(result.content[1].text).not.toContain("other.py");
 });
 
+test("Ruff style-only findings leave model-facing content untouched and preserve edit details", async () => {
+	const file = path.join(root, "a.py");
+	fs.writeFileSync(file, "import sys\nimport os\n");
+	exec.mockImplementation(async () => ({
+		stdout: `${file}:1:1: I001 [*] Import block is un-sorted or un-formatted\n${file}:3:89: E501 Line too long\n`,
+		stderr: "", code: 1,
+	}));
+	const result = await handlers.tool_result({ ...event(file), details: { diff: "original diff" } }, ctx);
+	expect(result.content).toBeUndefined();
+	expect(result.details.diff).toBe("original diff");
+	expect(result.details.lintStyle).toContain("I001");
+	expect(result.details.lintStyle).toContain("E501");
+});
+
+test("Ruff style does not crowd out actionable findings or hide other fixable rules", async () => {
+	const file = path.join(root, "a.py");
+	fs.writeFileSync(file, "print(missing)\n");
+	exec.mockImplementation(async () => ({
+		stdout: `${file}:1:1: I001 [*] Unsorted imports\n`.repeat(21) +
+			`${file}:2:1: F401 [*] Unused import\n${file}:3:7: F821 Undefined name missing\n`,
+		stderr: "", code: 1,
+	}));
+	const result = await handlers.tool_result(event(file, "write"), ctx);
+	expect(result.content[1].text).toContain("F821");
+	expect(result.content[1].text).toContain("F401");
+	expect(result.content[1].text).not.toContain("I001");
+	expect(result.details.lintStyle).toContain("(1 more)");
+	expect(result.details.lintStyle).not.toContain("F821");
+});
+
 test("eslint reports errors only and explicitly disables fixes", async () => {
 	const file = path.join(root, "a.ts");
 	fs.writeFileSync(file, "const x=1\n");

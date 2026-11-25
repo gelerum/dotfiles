@@ -105,6 +105,19 @@ test("lint findings remain visible even when the edit itself succeeded", () => {
 	expect(r.body.render(100).join("\n")).toContain("main.nix:1: bad code");
 });
 
+test("style findings from details are visible in compact and expanded edit rows", () => {
+	const lintStyle = "ruff (style):\na.py:1: I001 Unsorted imports";
+	const result = output("Edit applied", { lintStyle });
+	const args = { path: "a.py" };
+	const compact = row("edit", args, result);
+	expect(compact.call.render(100)[0]).toContain("Lint findings");
+	expect(compact.body.render(100).join("\n")).toContain("I001");
+	for (const original of [undefined, { renderResult: () => new TestText("Original diff") }]) {
+		const expanded = row("edit", args, result, { expanded: true }, original);
+		expect(expanded.body.render(100).join("\n")).toContain(lintStyle);
+	}
+});
+
 test("expanded and verbose edit/write rows keep full lint findings beside the original component", async () => {
 	for (const mode of ["expanded", "verbose"]) {
 		if (mode === "verbose") await commands.ui.handler("verbose", ctx);

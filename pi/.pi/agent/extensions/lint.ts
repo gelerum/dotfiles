@@ -1,6 +1,7 @@
 /**
  * После write/edit запускает линтер по изменённому файлу и добавляет найденные
- * ошибки к результату инструмента. Без автоисправлений, форматирования и
+ * ошибки к результату инструмента. Косметика Ruff остаётся только в TUI.
+ * Без автоисправлений, форматирования и
  * дополнительных ходов модели. Настройки линтера берутся из проекта.
  */
 
@@ -12,6 +13,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const MAX_DIAGS = 20;
 const LINT_TIMEOUT_MS = 15_000;
+// Only explicitly cosmetic rules; being auto-fixable doesn't make a finding cosmetic.
+const RUFF_COSMETIC = /^(?:I001|E501|W291|W292|W293)\s/;
 
 interface Diag {
 	file: string;
@@ -176,10 +179,16 @@ export default function (pi: ExtensionAPI) {
 		const file = resolve(ctx.cwd, (event.input as { path: string }).path);
 		if (!inProject(root, file)) return;
 		const reports: string[] = [];
+		let lintStyle: string | undefined;
 		for (const linter of LINTERS) {
 			if (!linter.applies(root, file)) continue;
 			try {
-				const diags = (await linter.run(root, file, exec(root))).filter((d) => d.file === file);
+				let diags = (await linter.run(root, file, exec(root))).filter((d) => d.file === file);
+				if (linter.name === "ruff") {
+					const cosmetic = diags.filter((d) => RUFF_COSMETIC.test(d.message));
+					if (cosmetic.length) lintStyle = `ruff (style):\n${format(cosmetic, root)}`;
+					diags = diags.filter((d) => !RUFF_COSMETIC.test(d.message));
+				}
 				if (diags.length) reports.push(`${linter.name}:\n${format(diags, root)}`);
 			} catch {
 				// A broken/malformed linter must not hide the successful edit or stop
@@ -187,8 +196,12 @@ export default function (pi: ExtensionAPI) {
 				reports.push(`${linter.name}: check failed; run the linter manually for details`);
 			}
 		}
-		if (!reports.length) return;
-		return { content: [...event.content, { type: "text", text: `\n\nLint errors in this file, fix them:\n${reports.join("\n\n")}` }] };
+		if (!reports.length && !lintStyle) return;
+		return {
+			...(reports.length ? { content: [...event.content, { type: "text" as const, text: `\n\nLint errors in this file, fix them:\n${reports.join("\n\n")}` }] } : {}),
+			// Pi renders details locally; only content is sent to the model.
+			...(lintStyle ? { details: { ...event.details, lintStyle } } : {}),
+		};
 	});
 
 }
