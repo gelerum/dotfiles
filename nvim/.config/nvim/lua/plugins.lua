@@ -59,6 +59,7 @@ return {
 					"luadoc",
 					"markdown",
 					"markdown_inline",
+					"proto",
 					"python",
 					"query",
 					"regex",
@@ -629,6 +630,12 @@ return {
 				lua = { "lua_ls", "stylua" },
 				rust = { "rust_analyzer" },
 				go = { "gopls", "goimports", "gofumpt" },
+				nextflow = { "nextflow-language-server" },
+				protobuf = { "buf" },
+				grpc = { "buf" }, -- gRPC-сервисы описываются в .proto
+				yaml = { "yaml-language-server", "yamllint", "prettier" },
+				json = { "json-lsp", "prettier" },
+				toml = { "taplo" },
 			}
 
 			local langs = vim.split(vim.env.DEVENV_LANGS or "", "%s+", { trimempty = true })
@@ -640,13 +647,52 @@ return {
 			local tools = {}
 			for _, lang in ipairs(langs) do
 				if by_lang[lang] then
-					vim.list_extend(tools, by_lang[lang])
+					for _, tool in ipairs(by_lang[lang]) do
+						if not vim.tbl_contains(tools, tool) then
+							table.insert(tools, tool)
+						end
+					end
 				else
 					vim.notify("DEVENV_LANGS: неизвестный язык '" .. lang .. "', пропускаю", vim.log.levels.WARN)
 				end
 			end
 
 			return { ensure_installed = tools }
+		end,
+	},
+
+	-- =============================================
+	-- YAML: yamllint проверяет стиль, yamlls — синтаксис и схему.
+	-- =============================================
+	{
+		"mfussenegger/nvim-lint",
+		event = { "BufReadPost", "BufNewFile" },
+		dependencies = { "williamboman/mason.nvim" },
+		config = function()
+			local lint = require("lint")
+			local yaml_filetypes = { "yaml", "yaml.docker-compose", "yaml.gitlab", "yaml.helm-values" }
+			vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
+				group = vim.api.nvim_create_augroup("YamlLint", { clear = true }),
+				callback = function(event)
+					if
+						not vim.tbl_contains(yaml_filetypes, vim.bo[event.buf].filetype)
+						or vim.fn.executable("yamllint") ~= 1
+					then
+						return
+					end
+					local cwd = vim.fs.dirname(event.match)
+					local config = vim.fs.find(
+						{ ".yamllint", ".yamllint.yaml", ".yamllint.yml" },
+						{ path = cwd, upward = true }
+					)[1]
+					-- Не навязываем правила стиля проектам, которые не настроили yamllint.
+					if config then
+						vim.api.nvim_buf_call(event.buf, function()
+							lint.try_lint("yamllint", { cwd = vim.fs.dirname(config) })
+						end)
+					end
+				end,
+			})
 		end,
 	},
 
@@ -675,6 +721,15 @@ return {
 					python = { "ruff_organize_imports", "ruff_format" },
 					rust = { "rustfmt" },
 					go = { "goimports", "gofumpt" },
+					proto = { "buf" },
+					yaml = { "prettier" },
+					["yaml.docker-compose"] = { "prettier" },
+					["yaml.gitlab"] = { "prettier" },
+					["yaml.helm-values"] = { "prettier" },
+					json = { "prettier" },
+					jsonc = { "prettier" },
+					toml = { "taplo" },
+					-- Nextflow использует форматирование через LSP fallback.
 				},
 
 				format_on_save = {

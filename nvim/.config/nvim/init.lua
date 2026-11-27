@@ -5,6 +5,11 @@
 -- Load options first
 require("options")
 
+vim.filetype.add({
+	extension = { nf = "nextflow" },
+	filename = { ["nextflow.config"] = "nextflow" },
+})
+
 -- Bootstrap + Load lazy.nvim
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.uv.fs_stat(lazypath) then
