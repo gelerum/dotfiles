@@ -28,6 +28,7 @@ import * as path from "node:path";
 import { type ExtensionAPI, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { inheritedAccountArgs } from "./child-cli.js";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
@@ -249,7 +250,7 @@ async function runAgent(
 		return result;
 	}
 
-	const args = ["--mode", "json", "-p"];
+	const args = ["--mode", "json", "-p", ...inheritedAccountArgs(process.argv)];
 	const sessionId = `${Date.now().toString(36)}-${name.replace(/[^A-Za-z0-9]/g, "")}-${Math.random().toString(36).slice(2, 8)}`;
 	if (defaults.sessionDir) {
 		fs.mkdirSync(defaults.sessionDir, { recursive: true });
